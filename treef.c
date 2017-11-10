@@ -49,7 +49,7 @@ void path_add(struct node *root, char *path)
     if (!end) {
         node_add(root, path);
     } else {
-        for (int i = 0; i < root->childcount; i++) {
+        for (size_t i = 0; i < root->childcount; i++) {
             if (!strncmp(root->children[i]->name, path, end - path)) {
                 path_add(root->children[i], end + 1);
                 return;
@@ -67,12 +67,12 @@ void path_add(struct node *root, char *path)
     }
 }
 
-void print_tree(struct node *root, size_t *toddlers, int depth)
+void print_tree(struct node *root, size_t *toddlers, size_t depth)
 {
     toddlers[depth] = root->childcount;
 
-    for (int i = 0; i < root->childcount; i++) {
-        for (int level = 0; level < depth; level++) {
+    for (size_t i = 0; i < root->childcount; i++) {
+        for (size_t level = 0; level < depth; level++) {
             if (toddlers[level] > 0)
                 printf("│   ");
             else
