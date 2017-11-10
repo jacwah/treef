@@ -65,38 +65,29 @@ void path_add(struct node *root, char *path)
     }
 }
 
-void tree_print_debug(struct node *root, char *prefix)
+void print_tree(struct node *root, size_t *toddlers, int depth)
 {
-    char *new_prefix;
-    size_t prefix_len;
-    size_t name_len;
-
-    if (prefix)
-        prefix_len = strlen(prefix);
-    else
-        prefix_len = 0;
-
-    if (root->name)
-        name_len = strlen(root->name);
-    else
-        name_len = 0;
-
-    new_prefix = malloc(prefix_len + !!prefix_len + name_len + 1);
-
-    memcpy(new_prefix, prefix, prefix_len);
-
-    if (prefix_len)
-        new_prefix[prefix_len] = '/';
-
-    memcpy(new_prefix + prefix_len + !!prefix_len, root->name, name_len);
-    new_prefix[prefix_len + !!prefix_len + name_len] = '\0';
+    toddlers[depth] = root->childcount;
 
     for (int i = 0; i < root->childcount; i++) {
-        if (root->children[i]->childcount == 0) {
-            printf("%s/%s\n", new_prefix, root->children[i]->name);
-        } else {
-            tree_print_debug(root->children[i], new_prefix);
+        for (int level = 0; level < depth; level++) {
+            if (toddlers[level] > 0)
+                printf("│   ");
+            else
+                printf("    ");
         }
+
+        if (toddlers[depth] > 1)
+            printf("├── ");
+        else
+            printf("└── ");
+
+        printf("%s\n", root->children[i]->name);
+
+        toddlers[depth]--;
+
+        if (root->children[i]->childcount)
+            print_tree(root->children[i], toddlers, depth + 1);
     }
 }
 
@@ -105,6 +96,7 @@ int main(int argc, char **argv)
     char *line = NULL;
     size_t linelen = 0;
     size_t nread = 0;
+    size_t tree_height = 1;
     struct node *root = malloc(sizeof(struct node));
 
     root->name = "";
@@ -116,8 +108,15 @@ int main(int argc, char **argv)
         if (line[nread - 1] == '\n')
             line[nread - 1] = '\0';
 
+        size_t height = 1;
+        for (char *slash = line; (slash = strchr(slash, '/')); slash++, height++);
+
+        if (height > tree_height)
+            tree_height = height;
+
         path_add(root, line);
     }
 
-    tree_print_debug(root, NULL);
+    size_t *toddlers = malloc(tree_height * sizeof(size_t));
+    print_tree(root, toddlers, 0);
 }
