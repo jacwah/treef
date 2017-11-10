@@ -1,7 +1,3 @@
-/* TODO or IDEA
- * Generalise to arbitrary delimiters
- */
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
