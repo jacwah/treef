@@ -116,6 +116,14 @@ int main(int argc, char **argv)
         path_add(root, line);
     }
 
+    // If all paths have a common root component, we draw that as the
+    // tree's root. Not if we only have a single lonely path -- that would
+    // just echo that path.
+    if (root->childcount == 1 && root->children[0]->childcount) {
+        root = root->children[0];
+        puts(root->name);
+    }
+
     size_t *toddlers = malloc(tree_height * sizeof(size_t));
     print_tree(root, toddlers, 0);
 }
