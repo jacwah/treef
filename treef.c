@@ -36,7 +36,7 @@ void path_add(struct node *root, char *path)
 {
     while (*path == '/') path++;
 
-    // Occurs on trialing slash
+    // Occurs on trailing slash
     if (path[0] == '\0')
         return;
 
