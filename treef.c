@@ -1,8 +1,5 @@
 /* TODO or IDEA
- * Normalise paths e.g. consecutive '/'
  * Generalise to arbitrary delimiters
- * Trailing '/' = directory
- * Handle root anchored paths
  */
 
 #include <stdio.h>
@@ -41,27 +38,32 @@ struct node *node_add(struct node *parent, char *name)
 
 void path_add(struct node *root, char *path)
 {
-    // TEST: what if duplicates?
-    char *sep = strchr(path, '/');
+    while (*path == '/') path++;
 
-    if (!sep) {
+    // Occurs on trialing slash
+    if (path[0] == '\0')
+        return;
+
+    char *end = strchr(path, '/');
+
+    if (!end) {
         node_add(root, path);
     } else {
         for (int i = 0; i < root->childcount; i++) {
-            if (!strncmp(root->children[i]->name, path, sep - path)) {
-                path_add(root->children[i], sep + 1);
+            if (!strncmp(root->children[i]->name, path, end - path)) {
+                path_add(root->children[i], end + 1);
                 return;
             }
         }
 
-        // "abc/def": sep = path + 3 -> sep - path = 3 -> path[3] = '/'
-        size_t len = sep - path;
+        // "abc/def": end = path + 3 -> end - path = 3 -> path[end - path] = '/'
+        size_t len = end - path;
         char *name = malloc(len + 1);
         memcpy(name, path, len);
         name[len] = '\0';
 
         struct node *parent = node_add(root, name);
-        path_add(parent, sep + 1);
+        path_add(parent, end + 1);
     }
 }
 
@@ -108,6 +110,7 @@ int main(int argc, char **argv)
         if (line[nread - 1] == '\n')
             line[nread - 1] = '\0';
 
+        // Calculate height by counting slashes
         size_t height = 1;
         for (char *slash = line; (slash = strchr(slash, '/')); slash++, height++);
 
