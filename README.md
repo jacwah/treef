@@ -42,5 +42,5 @@ power of regular expressions.
 
 **What files are referred to in a ctags file?** Just for fun :)
 
-    grep -v '^!_' tags | cut -f 2 | sort | uniq | treef
+    grep -v '^!_' tags | cut -f 2 | treef
 

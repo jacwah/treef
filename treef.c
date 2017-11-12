@@ -11,6 +11,13 @@ struct node {
 
 struct node *node_add(struct node *parent, char *name)
 {
+    // De-dupe nodes
+    for (size_t i = 0; i < parent->childcount; i++) {
+        if (!strcmp(parent->children[i]->name, name)) {
+            return parent->children[i];
+        }
+    }
+
     struct node *node = malloc(sizeof(struct node));
 
     node->name = strdup(name);
