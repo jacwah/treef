@@ -1,7 +1,10 @@
 #!/bin/bash
 
-TREEF="./treef"
-DIFF="diff"
+# Define environment variables to use alternative tools.
+# Run as `VALGRIND= ./test.sh` if you don't have or don't want to use Valgrind.
+: ${TREEF:=./treef}
+: ${DIFF:=diff}
+: ${VALGRIND=valgrind --tool=memcheck --leak-check=no --quiet}
 
 RED=$(tput setaf 1 2>/dev/null)
 GREEN=$(tput setaf 2 2>/dev/null)
@@ -18,7 +21,7 @@ do
     path=${infile%.in}
     name=${path##*/}
 
-    diff=$($DIFF ${path}.out <($TREEF < "$infile"))
+    diff=$($DIFF ${path}.out <($VALGRIND $TREEF < "$infile"))
 
     if [ -z "$diff" ]
     then
