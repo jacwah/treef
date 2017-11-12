@@ -39,23 +39,24 @@ struct node *node_add(struct node *parent, char *name)
     return node;
 }
 
-void path_add(struct node *root, char *path)
+// Returns height at which the node was added.
+size_t path_add(struct node *root, char *path)
 {
     while (*path == '/') path++;
 
     // Occurs on trailing slash
     if (path[0] == '\0')
-        return;
+        return 0;
 
     char *end = strchr(path, '/');
 
     if (!end) {
         node_add(root, path);
+        return 1;
     } else {
         for (size_t i = 0; i < root->childcount; i++) {
             if (!strncmp(root->children[i]->name, path, end - path)) {
-                path_add(root->children[i], end + 1);
-                return;
+                return 1 + path_add(root->children[i], end + 1);
             }
         }
 
@@ -66,7 +67,7 @@ void path_add(struct node *root, char *path)
         name[len] = '\0';
 
         struct node *parent = node_add(root, name);
-        path_add(parent, end + 1);
+        return 1 + path_add(parent, end + 1);
     }
 }
 
@@ -113,14 +114,10 @@ int main(int argc, char **argv)
         if (line[nread - 1] == '\n')
             line[nread - 1] = '\0';
 
-        // Calculate height by counting slashes
-        size_t height = 1;
-        for (char *slash = line; (slash = strchr(slash, '/')); slash++, height++);
+        size_t height = path_add(root, line);
 
         if (height > tree_height)
             tree_height = height;
-
-        path_add(root, line);
     }
 
     // If all paths have a common root component, we draw that as the
