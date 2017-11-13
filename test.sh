@@ -1,10 +1,14 @@
 #!/bin/bash
 
 # Define environment variables to use alternative tools.
-# Run as `VALGRIND= ./test.sh` if you don't have or don't want to use Valgrind.
+# Run as `VALGRIND= ./test.sh` if you don't want to use Valgrind.
 : ${TREEF:=./treef}
 : ${DIFF:=diff}
-: ${VALGRIND=valgrind --tool=memcheck --leak-check=no --quiet}
+
+if [ $(which valgrind) ]
+then
+    : ${VALGRIND=valgrind --tool=memcheck --leak-check=no --quiet}
+fi
 
 RED=$(tput setaf 1 2>/dev/null)
 GREEN=$(tput setaf 2 2>/dev/null)
