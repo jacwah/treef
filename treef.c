@@ -101,7 +101,7 @@ int main(int argc, char **argv)
 {
     char *line = NULL;
     size_t linelen = 0;
-    size_t nread = 0;
+    ssize_t nread = 0;
     size_t tree_height = 1;
     struct node *root = malloc(sizeof(struct node));
 
@@ -110,7 +110,7 @@ int main(int argc, char **argv)
     root->capacity = 0;
     root->children = NULL;
 
-    while ((nread = getline(&line, &linelen, stdin)) != -1) {
+    while ((nread = getline(&line, &linelen, stdin)) > 0) {
         if (line[nread - 1] == '\n')
             line[nread - 1] = '\0';
 
