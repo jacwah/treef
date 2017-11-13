@@ -97,7 +97,7 @@ void print_tree(struct node *root, size_t *toddlers, size_t depth)
     }
 }
 
-int main(int argc, char **argv)
+int main()
 {
     char *line = NULL;
     size_t linelen = 0;
