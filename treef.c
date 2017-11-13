@@ -54,14 +54,15 @@ size_t path_add(struct node *root, char *path)
         node_add(root, path);
         return 1;
     } else {
+        // "abc/def": end = path + 3 -> end - path = 3 -> path[end - path] = '/'
+        size_t len = (size_t) (end - path);
+
         for (size_t i = 0; i < root->childcount; i++) {
-            if (!strncmp(root->children[i]->name, path, end - path)) {
+            if (!strncmp(root->children[i]->name, path, len)) {
                 return 1 + path_add(root->children[i], end + 1);
             }
         }
 
-        // "abc/def": end = path + 3 -> end - path = 3 -> path[end - path] = '/'
-        size_t len = end - path;
         char *name = malloc(len + 1);
         memcpy(name, path, len);
         name[len] = '\0';
