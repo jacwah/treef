@@ -3,7 +3,7 @@
 #include <string.h>
 
 struct node {
-    char *name;
+    const char *name;
     size_t childcount;
     size_t capacity;
     struct node **children;
