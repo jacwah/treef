@@ -44,3 +44,15 @@ power of regular expressions.
 
     grep -v '^!_' tags | cut -f 2 | treef
 
+## Developing
+Building is simple:
+
+    make
+
+Run automated tests:
+
+    make test
+
+The tests will run with Valgrind's memcheck if installed.
+
+See TESTING.md for help on writing test cases.
