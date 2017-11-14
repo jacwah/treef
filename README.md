@@ -13,6 +13,14 @@ compositions.
     │   └── Contributions welcome!
     └── Written by Jacob Wahlgren
 
+## Getting started
+Use `make` to build and install treef.
+
+    make
+    make install    # may require sudo
+
+Take a look at the cookbook for some uses!
+
 ## Cookbook
 The output of a wide range of command line tools can be visualised with
 `treef`. Here is a collection of recipes as inspiration, some more useful than
@@ -44,15 +52,10 @@ power of regular expressions.
 
     grep -v '^!_' tags | cut -f 2 | treef
 
-## Developing
-Building is simple:
-
-    make
-
-Run automated tests:
+## Testing
+Run automated tests with
 
     make test
 
-The tests will run with Valgrind's memcheck if installed.
-
-See TESTING.md for help on writing test cases.
+The tests will run with Valgrind's memcheck if installed. See TESTING.md for
+help on writing test cases.
