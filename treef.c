@@ -18,23 +18,6 @@ struct node {
     size_t child_idx;
 };
 
-size_t find_child(struct arena *arena, size_t parent_idx, const char *name)
-{
-    if (arena->used == 0)
-        return 0;
-
-    size_t child_idx = arena->nodes[parent_idx].child_idx;
-
-    while (child_idx) {
-        if (!strcmp(arena->nodes[child_idx].name, name))
-            return child_idx;
-
-        child_idx = arena->nodes[child_idx].sibling_idx;
-    }
-
-    return 0;
-}
-
 size_t nfind_child(struct arena *arena, size_t parent_idx, const char *name, size_t namelen)
 {
     if (arena->used == 0)
