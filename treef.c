@@ -31,7 +31,9 @@ struct node *node_add(struct node *parent, char *name)
         else
             parent->capacity *= 2;
 
-        parent->children = realloc(parent->children, sizeof(struct node *) * parent->capacity);
+        parent->children = realloc(
+                parent->children,
+                sizeof(struct node *) * parent->capacity);
     }
 
     parent->children[parent->childcount++] = node;
@@ -74,9 +76,11 @@ size_t path_add(struct node *root, char *path)
 
 void print_tree(struct node *root, size_t *toddlers, size_t depth)
 {
+    // toddlers are unprocessed children
     toddlers[depth] = root->childcount;
 
     for (size_t i = 0; i < root->childcount; i++) {
+        // Indent
         for (size_t level = 0; level < depth; level++) {
             if (toddlers[level] > 0)
                 printf("│   ");
