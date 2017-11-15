@@ -4,49 +4,96 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define INITIAL_CHILDREN_CAPACITY 8
+#define INITIAL_NODE_CAPACITY 8
+
+struct arena {
+    size_t used;
+    size_t capacity;
+    struct node *nodes;
+};
 
 struct node {
     const char *name;
-    size_t childcount;
-    size_t capacity;
-    struct node **children;
+    size_t sibling_idx;
+    size_t child_idx;
 };
 
-struct node *node_add(struct node *parent, char *name)
+size_t find_child(struct arena *arena, size_t parent_idx, const char *name)
 {
-    // De-dupe nodes
-    for (size_t i = 0; i < parent->childcount; i++) {
-        if (!strcmp(parent->children[i]->name, name)) {
-            return parent->children[i];
+    if (arena->used == 0)
+        return 0;
+
+    size_t child_idx = arena->nodes[parent_idx].child_idx;
+
+    while (child_idx) {
+        if (!strcmp(arena->nodes[child_idx].name, name))
+            return child_idx;
+
+        child_idx = arena->nodes[child_idx].sibling_idx;
+    }
+
+    return 0;
+}
+
+size_t nfind_child(struct arena *arena, size_t parent_idx, const char *name, size_t namelen)
+{
+    if (arena->used == 0)
+        return 0;
+
+    size_t child_idx = arena->nodes[parent_idx].child_idx;
+
+    while (child_idx) {
+        if (!strncmp(arena->nodes[child_idx].name, name, namelen))
+            return child_idx;
+
+        child_idx = arena->nodes[child_idx].sibling_idx;
+    }
+
+    return 0;
+}
+size_t node_add(struct arena *arena, size_t parent_idx, const char *name)
+{
+    if (arena->capacity == arena->used) {
+        if (arena->capacity == 0)
+            arena->capacity = INITIAL_NODE_CAPACITY;
+        else
+            arena->capacity *= 2;
+
+        arena->nodes = realloc(
+                arena->nodes,
+                sizeof(struct node) * arena->capacity);
+    }
+
+    struct node *new = &arena->nodes[arena->used];
+    new->name = strdup(name);
+    new->sibling_idx = 0;
+    new->child_idx = 0;
+
+    if (arena->used) {
+        if (arena->nodes[parent_idx].child_idx) {
+            size_t prev_idx = 0;
+
+            size_t sibling_idx = arena->nodes[parent_idx].child_idx;
+
+            while (sibling_idx) {
+                if (!strcmp(arena->nodes[sibling_idx].name, name)) {
+                    return sibling_idx;
+                }
+                prev_idx = sibling_idx;
+                sibling_idx = arena->nodes[sibling_idx].sibling_idx;
+            }
+
+        arena->nodes[prev_idx].sibling_idx = arena->used;
+        } else {
+            arena->nodes[parent_idx].child_idx = arena->used;
         }
     }
 
-    struct node *node = malloc(sizeof(struct node));
-
-    node->name = strdup(name);
-    node->childcount = 0;
-    node->capacity = 0;
-    node->children = NULL;
-
-    if (parent->capacity == parent->childcount) {
-        if (parent->capacity == 0)
-            parent->capacity = INITIAL_CHILDREN_CAPACITY;
-        else
-            parent->capacity *= 2;
-
-        parent->children = realloc(
-                parent->children,
-                sizeof(struct node *) * parent->capacity);
-    }
-
-    parent->children[parent->childcount++] = node;
-
-    return node;
+    return arena->used++;;
 }
 
 // Returns height at which the node was added.
-size_t path_add(struct node *root, char *path)
+size_t path_add(struct arena *arena, size_t parent_idx, const char *path)
 {
     while (*path == '/') path++;
 
@@ -57,52 +104,53 @@ size_t path_add(struct node *root, char *path)
     char *end = strchr(path, '/');
 
     if (!end) {
-        node_add(root, path);
+        node_add(arena, parent_idx, path);
         return 1;
     } else {
         // "abc/def": end = path + 3 -> end - path = 3 -> path[end - path] = '/'
         size_t len = (size_t) (end - path);
+        size_t next_idx = nfind_child(arena, parent_idx, path, len);
 
-        for (size_t i = 0; i < root->childcount; i++) {
-            if (!strncmp(root->children[i]->name, path, len)) {
-                return 1 + path_add(root->children[i], end + 1);
-            }
+        if (next_idx) {
+            return 1 + path_add(arena, next_idx, end + 1);
         }
 
         char *name = malloc(len + 1);
         memcpy(name, path, len);
         name[len] = '\0';
 
-        struct node *parent = node_add(root, name);
-        return 1 + path_add(parent, end + 1);
+        size_t new_parent_idx = node_add(arena, parent_idx, name);
+
+        return 1 + path_add(arena, new_parent_idx, end + 1);
     }
 }
 
-void print_tree(struct node *root, size_t *toddlers, size_t depth)
+void print_tree(struct arena *arena, size_t *root_path, size_t depth, size_t root_idx)
 {
-    // toddlers are unprocessed children
-    toddlers[depth] = root->childcount;
+    size_t child_idx = arena->nodes[root_idx].child_idx;
 
-    for (size_t i = 0; i < root->childcount; i++) {
-        // Indent
-        for (size_t level = 0; level < depth; level++) {
-            if (toddlers[level] > 0)
+    if (child_idx)
+        root_path[depth] = root_idx;
+
+    while (child_idx) {
+        size_t next_idx = arena->nodes[child_idx].sibling_idx;
+
+        for (size_t anscestor = 1; anscestor <= depth; anscestor++) {
+            if (arena->nodes[root_path[anscestor]].sibling_idx)
                 printf("│   ");
             else
                 printf("    ");
         }
 
-        if (toddlers[depth] > 1)
+        if (next_idx) {
             printf("├── ");
-        else
+        } else {
             printf("└── ");
+        }
 
-        printf("%s\n", root->children[i]->name);
-
-        toddlers[depth]--;
-
-        if (root->children[i]->childcount)
-            print_tree(root->children[i], toddlers, depth + 1);
+        printf("%s\n", arena->nodes[child_idx].name);
+        print_tree(arena, root_path, depth + 1, child_idx);
+        child_idx = next_idx;
     }
 }
 
@@ -112,18 +160,16 @@ int main()
     size_t linelen = 0;
     ssize_t nread = 0;
     size_t tree_height = 1;
-    struct node *root = malloc(sizeof(struct node));
+    struct arena arena;
 
-    root->name = "";
-    root->childcount = 0;
-    root->capacity = 0;
-    root->children = NULL;
+    memset(&arena, 0, sizeof(arena));
+    node_add(&arena, 0, "");
 
     while ((nread = getline(&line, &linelen, stdin)) > 0) {
         if (line[nread - 1] == '\n')
             line[nread - 1] = '\0';
 
-        size_t height = path_add(root, line);
+        size_t height = path_add(&arena, 0, line);
 
         if (height > tree_height)
             tree_height = height;
@@ -132,11 +178,15 @@ int main()
     // If all paths have a common root component, we draw that as the
     // tree's root. Not if we only have a single lonely path -- that would
     // just echo that path.
-    if (root->childcount == 1 && root->children[0]->childcount) {
+    /*
+    if (arena->childcount == 1 && root->children[0]->childcount) {
         root = root->children[0];
         puts(root->name);
     }
+    */
 
-    size_t *toddlers = malloc(tree_height * sizeof(size_t));
-    print_tree(root, toddlers, 0);
+    if (arena.nodes) {
+        size_t *path = malloc(sizeof(size_t) * tree_height);
+        print_tree(&arena, path, 0, 0);
+    }
 }
