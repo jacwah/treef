@@ -15,7 +15,7 @@ then
     exit 1
 fi
 
-[ -e $"TREEF" ] || die "$TREEF doesn't exist, have you compiled?"
+[ -e ${TREEF} ] || die "$TREEF doesn't exist, have you compiled?"
 
 while [ "$#" -gt 0 ]
 do
