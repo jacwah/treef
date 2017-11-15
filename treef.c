@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define INITIAL_CHILDREN_CAPACITY 8
+
 struct node {
     const char *name;
     size_t childcount;
@@ -27,7 +29,7 @@ struct node *node_add(struct node *parent, char *name)
 
     if (parent->capacity == parent->childcount) {
         if (parent->capacity == 0)
-            parent->capacity = 1;
+            parent->capacity = INITIAL_CHILDREN_CAPACITY;
         else
             parent->capacity *= 2;
 
