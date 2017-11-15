@@ -47,30 +47,32 @@ size_t node_add(struct arena *arena, size_t parent_idx, const char *name)
                 sizeof(struct node) * arena->capacity);
     }
 
+    // Update child_idx/sibling_idx
+    if (arena->used) {
+        size_t sibling_idx = arena->nodes[parent_idx].child_idx;
+
+        if (!sibling_idx) {
+            arena->nodes[parent_idx].child_idx = arena->used;
+        } else {
+            size_t last_sibling_idx;
+
+            while (sibling_idx) {
+                // If this node already exists, no need to add it again
+                if (!strcmp(arena->nodes[sibling_idx].name, name))
+                    return sibling_idx;
+
+                last_sibling_idx = sibling_idx;
+                sibling_idx = arena->nodes[sibling_idx].sibling_idx;
+            }
+
+            arena->nodes[last_sibling_idx].sibling_idx = arena->used;
+        }
+    }
+
     struct node *new = &arena->nodes[arena->used];
     new->name = strdup(name);
     new->sibling_idx = 0;
     new->child_idx = 0;
-
-    if (arena->used) {
-        if (arena->nodes[parent_idx].child_idx) {
-            size_t prev_idx = 0;
-
-            size_t sibling_idx = arena->nodes[parent_idx].child_idx;
-
-            while (sibling_idx) {
-                if (!strcmp(arena->nodes[sibling_idx].name, name)) {
-                    return sibling_idx;
-                }
-                prev_idx = sibling_idx;
-                sibling_idx = arena->nodes[sibling_idx].sibling_idx;
-            }
-
-        arena->nodes[prev_idx].sibling_idx = arena->used;
-        } else {
-            arena->nodes[parent_idx].child_idx = arena->used;
-        }
-    }
 
     return arena->used++;;
 }
