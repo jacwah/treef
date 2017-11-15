@@ -175,18 +175,15 @@ int main()
             tree_height = height;
     }
 
+    size_t *path = malloc(sizeof(size_t) * tree_height);
+
     // If all paths have a common root component, we draw that as the
     // tree's root. Not if we only have a single lonely path -- that would
     // just echo that path.
-    /*
-    if (arena->childcount == 1 && root->children[0]->childcount) {
-        root = root->children[0];
-        puts(root->name);
-    }
-    */
-
-    if (arena.nodes) {
-        size_t *path = malloc(sizeof(size_t) * tree_height);
+    if (arena.used > 2 && !arena.nodes[1].sibling_idx) {
+        puts(arena.nodes[1].name);
+        print_tree(&arena, path, 0, 1);
+    } else {
         print_tree(&arena, path, 0, 0);
     }
 }
