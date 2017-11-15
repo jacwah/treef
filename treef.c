@@ -70,7 +70,7 @@ size_t node_add(struct arena *arena, size_t parent_idx, const char *name)
     }
 
     struct node *new = &arena->nodes[arena->used];
-    new->name = strdup(name);
+    new->name = name;
     new->sibling_idx = 0;
     new->child_idx = 0;
 
@@ -89,7 +89,7 @@ size_t path_add(struct arena *arena, size_t parent_idx, const char *path)
     char *end = strchr(path, '/');
 
     if (!end) {
-        node_add(arena, parent_idx, path);
+        node_add(arena, parent_idx, strdup(path));
         return 1;
     } else {
         // "abc/def": end = path + 3 -> end - path = 3 -> path[end - path] = '/'
