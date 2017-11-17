@@ -155,7 +155,8 @@ int main()
     /*if (arena.used > 1 && arena.nodes[0].sibling_idx < 0) {
         puts(arena.nodes[1].name);
         print_siblings(&arena, path, 0, 1);
-    } else*/ {
+    } else*/
+    if (arena.used) {
         print_siblings(&arena, path, 0, 0);
     }
 }
