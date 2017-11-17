@@ -127,6 +127,21 @@ void print_siblings(struct arena *arena, int *tree_path, size_t depth, int node_
     }
 }
 
+void print_tree(struct arena *arena, size_t tree_height)
+{
+    int *path = malloc(sizeof(int) * tree_height);
+
+    // If all paths have a common root component, we draw that as the
+    // tree's root. Not if we only have a single lonely path -- that would
+    // just echo that path.
+    if (arena->used > 1 && arena->nodes[0].sibling_idx < 0) {
+        puts(arena->nodes[0].name);
+        print_siblings(arena, path, 0, 1);
+    } else {
+        print_siblings(arena, path, 0, 0);
+    }
+}
+
 int main()
 {
     char *line = NULL;
@@ -147,17 +162,6 @@ int main()
             tree_height = height;
     }
 
-    int *path = malloc(sizeof(int) * tree_height);
-
-    if (arena.used) {
-        // If all paths have a common root component, we draw that as the
-        // tree's root. Not if we only have a single lonely path -- that would
-        // just echo that path.
-        if (arena.used > 1 && arena.nodes[0].sibling_idx < 0) {
-            puts(arena.nodes[0].name);
-            print_siblings(&arena, path, 0, 1);
-        } else {
-            print_siblings(&arena, path, 0, 0);
-        }
-    }
+    if (arena.used)
+        print_tree(&arena, tree_height);
 }
