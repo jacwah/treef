@@ -4,14 +4,27 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define INITIAL_NODE_CAPACITY 8
+#define ARENA_INITIAL_CAPACITY 8
 
+/**
+ * A region to store a tree of nodes.
+ *
+ * Using contiguous memory to store all nodes minimizes allocations and
+ * provides good cache locality.
+ */
 struct arena {
     size_t used;
     size_t capacity;
     struct node *nodes;
 };
 
+/**
+ * A node in the tree.
+ *
+ * Refers to its first child and next siblings by indices into the containing
+ * arena, or -1 if none exists. Nodes form a left-child right-sibling binary
+ * tree.
+ */
 struct node {
     const char *name;
     int sibling_idx;
@@ -22,7 +35,7 @@ void arena_prepare_add(struct arena *arena)
 {
     if (arena->capacity == arena->used) {
         if (arena->capacity == 0)
-            arena->capacity = INITIAL_NODE_CAPACITY;
+            arena->capacity = ARENA_INITIAL_CAPACITY;
         else
             arena->capacity *= 2;
 
@@ -41,6 +54,7 @@ int node_add(struct arena *arena, int parent_idx, int last_sibling_idx, const ch
     new->sibling_idx = -1;
     new->child_idx = -1;
 
+    // Link node into the tree
     if (last_sibling_idx >= 0)
         arena->nodes[last_sibling_idx].sibling_idx = (int) arena->used;
     else if (parent_idx >= 0)
@@ -49,7 +63,7 @@ int node_add(struct arena *arena, int parent_idx, int last_sibling_idx, const ch
     return (int) arena->used++;
 }
 
-int node_add_or_find(struct arena *arena, int parent_idx, const char *name, size_t len)
+int node_find_or_add(struct arena *arena, int parent_idx, const char *name, size_t len)
 {
     int last_sibling_idx = -1;
 
@@ -74,7 +88,11 @@ int node_add_or_find(struct arena *arena, int parent_idx, const char *name, size
     return node_add(arena, parent_idx, last_sibling_idx, strndup(name, len));
 }
 
-// Returns height at which the node was added.
+/**
+ * Add a file path to the tree.
+ *
+ * @return Height of the last component in path.
+ */
 size_t path_add(struct arena *arena, int parent_idx, const char *path)
 {
     while (*path == '/') path++;
@@ -86,18 +104,25 @@ size_t path_add(struct arena *arena, int parent_idx, const char *path)
     char *end = strchr(path, '/');
 
     if (!end) {
-        node_add_or_find(arena, parent_idx, path, strlen(path));
+        node_find_or_add(arena, parent_idx, path, strlen(path));
         return 1;
     } else {
         // "abc/def": end = path + 3 -> end - path = 3 -> path[end - path] = '/'
         size_t len = (size_t) (end - path);
-        int new_parent_idx = node_add_or_find(arena, parent_idx, path, len);
+        int new_parent_idx = node_find_or_add(arena, parent_idx, path, len);
 
         return 1 + path_add(arena, new_parent_idx, end + 1);
     }
 }
 
-void print_siblings(struct arena *arena, int *tree_path, size_t depth, int node_idx)
+/**
+ * Print a node and recursively its children and siblings in a tree style.
+ *
+ * tree_path is used to track the path of parents from the current node to the
+ * root node and must have spaces for the longest path from leaf to root (the
+ * height of the tree).
+ */
+void print_nodes_from(struct arena *arena, int *tree_path, size_t depth, int node_idx)
 {
     int child_idx = arena->nodes[node_idx].child_idx;
     int next_idx = arena->nodes[node_idx].sibling_idx;
@@ -119,27 +144,30 @@ void print_siblings(struct arena *arena, int *tree_path, size_t depth, int node_
 
     if (child_idx >= 0) {
         tree_path[depth] = node_idx;
-        print_siblings(arena, tree_path, depth + 1, child_idx);
+        print_nodes_from(arena, tree_path, depth + 1, child_idx);
     }
 
     if (next_idx >= 0) {
-        print_siblings(arena, tree_path, depth, next_idx);
+        print_nodes_from(arena, tree_path, depth, next_idx);
     }
 }
 
 void print_tree(struct arena *arena, size_t tree_height)
 {
     int *path = malloc(sizeof(int) * tree_height);
+    int root_idx;
 
     // If all paths have a common root component, we draw that as the
     // tree's root. Not if we only have a single lonely path -- that would
     // just echo that path.
     if (arena->used > 1 && arena->nodes[0].sibling_idx < 0) {
         puts(arena->nodes[0].name);
-        print_siblings(arena, path, 0, 1);
+        root_idx = 1;
     } else {
-        print_siblings(arena, path, 0, 0);
+        root_idx = 0;
     }
+
+    print_nodes_from(arena, path, 0, root_idx);
 }
 
 int main()
