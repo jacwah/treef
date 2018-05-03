@@ -77,7 +77,9 @@ int node_find_or_add(struct arena *arena, int parent_idx, const char *name, size
 
         while (sibling_idx >= 0) {
             // If this node already exists, no need to add it again
-            if (!strncmp(arena->nodes[sibling_idx].name, name, len))
+            const char *sibling_name = arena->nodes[sibling_idx].name;
+            if (!strncmp(sibling_name, name, len)
+                && sibling_name[len] == '\0')
                 return sibling_idx;
 
             last_sibling_idx = sibling_idx;
