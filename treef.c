@@ -118,39 +118,45 @@ size_t path_add(struct arena *arena, int parent_idx, const char *path)
 }
 
 /**
- * Print a node and recursively its children and siblings in a tree style.
+ * Print the nodes in a tree style.
  *
  * tree_path is used to track the path of parents from the current node to the
- * root node and must have spaces for the longest path from leaf to root (the
+ * root node and must have capactiy for the longest path from leaf to root (the
  * height of the tree).
  */
-void print_nodes_from(struct arena *arena, int *tree_path, size_t depth, int node_idx)
+void print_nodes(struct arena *arena, int *tree_path, int depth, int node_idx)
 {
-    int child_idx = arena->nodes[node_idx].child_idx;
-    int next_idx = arena->nodes[node_idx].sibling_idx;
+    for (;;) {
+        int child_idx = arena->nodes[node_idx].child_idx;
+        int next_idx = arena->nodes[node_idx].sibling_idx;
 
-    for (size_t anscestor = 0; anscestor < depth; anscestor++) {
-        if (arena->nodes[tree_path[anscestor]].sibling_idx < 0)
-            printf("    ");
-        else
-            printf("│   ");
-    }
+        for (int anscestor = 0; anscestor < depth; anscestor++) {
+            if (arena->nodes[tree_path[anscestor]].sibling_idx < 0)
+                printf("    ");
+            else
+                printf("│   ");
+        }
 
-    if (next_idx < 0) {
-        printf("└── ");
-    } else {
-        printf("├── ");
-    }
+        if (next_idx < 0) {
+            printf("└── ");
+        } else {
+            printf("├── ");
+        }
 
-    printf("%s\n", arena->nodes[node_idx].name);
+        printf("%s\n", arena->nodes[node_idx].name);
 
-    if (child_idx >= 0) {
-        tree_path[depth] = node_idx;
-        print_nodes_from(arena, tree_path, depth + 1, child_idx);
-    }
-
-    if (next_idx >= 0) {
-        print_nodes_from(arena, tree_path, depth, next_idx);
+        if (child_idx >= 0) {
+            tree_path[depth++] = node_idx;
+            node_idx = child_idx;
+        } else {
+            while (next_idx < 0 && depth > 0) {
+                node_idx = tree_path[--depth];
+                next_idx = arena->nodes[node_idx].sibling_idx;
+            }
+            if (next_idx < 0)
+                break;
+            node_idx = next_idx;
+        }
     }
 }
 
@@ -169,7 +175,7 @@ void print_tree(struct arena *arena, size_t tree_height)
         root_idx = 0;
     }
 
-    print_nodes_from(arena, path, 0, root_idx);
+    print_nodes(arena, path, 0, root_idx);
 }
 
 int main()
