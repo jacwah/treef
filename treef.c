@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 
 #define ARENA_INITIAL_CAPACITY 8
 
@@ -29,7 +30,10 @@ struct node {
     const char *name;
     int sibling_idx;
     int child_idx;
+    mode_t mode;
 };
+
+int flag_stat = 0;
 
 void arena_prepare_add(struct arena *arena)
 {
@@ -45,7 +49,7 @@ void arena_prepare_add(struct arena *arena)
     }
 }
 
-int node_add(struct arena *arena, int parent_idx, int last_sibling_idx, const char *name)
+int node_add(struct arena *arena, int parent_idx, int last_sibling_idx, const char *name, mode_t mode)
 {
     arena_prepare_add(arena);
 
@@ -53,6 +57,7 @@ int node_add(struct arena *arena, int parent_idx, int last_sibling_idx, const ch
     new->name = name;
     new->sibling_idx = -1;
     new->child_idx = -1;
+    new->mode = mode;
 
     // Link node into the tree
     if (last_sibling_idx >= 0)
@@ -63,9 +68,16 @@ int node_add(struct arena *arena, int parent_idx, int last_sibling_idx, const ch
     return (int) arena->used++;
 }
 
-int node_find_or_add(struct arena *arena, int parent_idx, const char *name, size_t len)
+struct find_result {
+    int node_idx;
+    int last_sibling_idx;
+};
+
+struct find_result
+node_find(struct arena *arena, int parent_idx, const char *name, size_t len)
 {
-    int last_sibling_idx = -1;
+    struct find_result result;
+    result.last_sibling_idx = -1;
 
     if (arena->used) {
         int sibling_idx = -1;
@@ -78,16 +90,42 @@ int node_find_or_add(struct arena *arena, int parent_idx, const char *name, size
         while (sibling_idx >= 0) {
             // If this node already exists, no need to add it again
             const char *sibling_name = arena->nodes[sibling_idx].name;
-            if (!strncmp(sibling_name, name, len)
-                && sibling_name[len] == '\0')
-                return sibling_idx;
+            if (!strncmp(sibling_name, name, len) && sibling_name[len] == '\0') {
+                result.node_idx = sibling_idx;
+                return result;
+            }
 
-            last_sibling_idx = sibling_idx;
+            result.last_sibling_idx = sibling_idx;
             sibling_idx = arena->nodes[sibling_idx].sibling_idx;
         }
     }
 
-    return node_add(arena, parent_idx, last_sibling_idx, strndup(name, len));
+    result.node_idx = -1;
+    return result;
+}
+
+int
+node_find_or_add(struct arena *arena, int parent_idx, const char *name, size_t len, mode_t mode)
+{
+    struct find_result found = node_find(arena, parent_idx, name, len);
+    if (found.node_idx >= 0)
+        return found.node_idx;
+    else
+        return node_add(arena, parent_idx, found.last_sibling_idx, strndup(name, len), mode);
+}
+
+mode_t
+stat_mode(const char *path)
+{
+    if (flag_stat) {
+        struct stat st;
+        if (lstat(path, &st))
+            return 0;
+        else
+            return st.st_mode;
+    } else {
+        return 0;
+    }
 }
 
 /**
@@ -95,26 +133,58 @@ int node_find_or_add(struct arena *arena, int parent_idx, const char *name, size
  *
  * @return Height of the last component in path.
  */
-size_t path_add(struct arena *arena, int parent_idx, const char *path)
+size_t path_add(struct arena *arena, int parent_idx, char *path, size_t off, mode_t mode)
 {
-    while (*path == '/') path++;
+    while (path[off] == '/') off++;
 
     // Occurs on trailing slash
-    if (path[0] == '\0')
+    if (path[off] == '\0')
         return 0;
 
-    char *end = strchr(path, '/');
+    char *slash = strchr(path+off, '/');
 
-    if (!end) {
-        node_find_or_add(arena, parent_idx, path, strlen(path));
+    if (!slash) {
+        // Leaf node
+        node_find_or_add(arena, parent_idx, path+off, strlen(path+off), mode);
         return 1;
     } else {
         // "abc/def": end = path + 3 -> end - path = 3 -> path[end - path] = '/'
-        size_t len = (size_t) (end - path);
-        int new_parent_idx = node_find_or_add(arena, parent_idx, path, len);
+        int grandparent_idx = parent_idx;
+        size_t len = (size_t)(slash - (path + off));
+        struct find_result found_parent = node_find(arena, grandparent_idx, path+off, len);
 
-        return 1 + path_add(arena, new_parent_idx, end + 1);
+        if (found_parent.node_idx >= 0) {
+            parent_idx = found_parent.node_idx;
+        } else {
+            mode_t parent_mode;
+            *slash = '\0';
+            parent_mode = stat_mode(path);
+            *slash = '/';
+            parent_idx = node_add(arena, grandparent_idx, found_parent.last_sibling_idx, strndup(path+off, len), parent_mode);
+        }
+
+        return 1 + path_add(arena, parent_idx, path, off+len+1, mode);
     }
+}
+
+static const char *
+color(mode_t mode)
+{
+    if (mode & S_IFREG)
+        return "\x1b[31m";
+    else if (mode & S_IFDIR)
+        return "\x1b[34m";
+    else
+        return "\x1b[m";
+}
+
+void
+print_node(struct node node)
+{
+    if (node.mode)
+        printf("%s%s%s\n", color(node.mode), node.name, color(0));
+    else
+        printf("%s\n", node.name);
 }
 
 /**
@@ -127,8 +197,9 @@ size_t path_add(struct arena *arena, int parent_idx, const char *path)
 void print_nodes(struct arena *arena, int *tree_path, int depth, int node_idx)
 {
     for (;;) {
-        int child_idx = arena->nodes[node_idx].child_idx;
-        int next_idx = arena->nodes[node_idx].sibling_idx;
+        struct node node = arena->nodes[node_idx];
+        int child_idx = node.child_idx;
+        int next_idx = node.sibling_idx;
 
         for (int anscestor = 0; anscestor < depth; anscestor++) {
             if (arena->nodes[tree_path[anscestor]].sibling_idx < 0)
@@ -143,7 +214,7 @@ void print_nodes(struct arena *arena, int *tree_path, int depth, int node_idx)
             printf("├── ");
         }
 
-        printf("%s\n", arena->nodes[node_idx].name);
+        print_node(node);
 
         if (child_idx >= 0) {
             tree_path[depth++] = node_idx;
@@ -169,7 +240,7 @@ void print_tree(struct arena *arena, size_t tree_height)
     // tree's root. Not if we only have a single lonely path -- that would
     // just echo that path.
     if (arena->used > 1 && arena->nodes[0].sibling_idx < 0) {
-        puts(arena->nodes[0].name);
+        print_node(arena->nodes[0]);
         root_idx = 1;
     } else {
         root_idx = 0;
@@ -178,25 +249,40 @@ void print_tree(struct arena *arena, size_t tree_height)
     print_nodes(arena, path, 0, root_idx);
 }
 
-int main()
+size_t
+read_input(struct arena *arena)
 {
     char *line = NULL;
     size_t linelen = 0;
     ssize_t nread = 0;
     size_t tree_height = 1;
-    struct arena arena;
-
-    memset(&arena, 0, sizeof(struct arena));
 
     while ((nread = getline(&line, &linelen, stdin)) > 0) {
         if (line[nread - 1] == '\n')
             line[nread - 1] = '\0';
 
-        size_t height = path_add(&arena, -1, line);
+        size_t height = path_add(arena, -1, line, 0, stat_mode(line));
 
         if (height > tree_height)
             tree_height = height;
     }
+
+    return tree_height;
+}
+
+int
+main(int argc, char *argv[])
+{
+    if (argc == 2 && !strcmp(argv[1], "-s"))
+        flag_stat = 1;
+    else if (argc > 1) {
+        fprintf(stderr, "usage: treef [-s]\n");
+        return 1;
+    }
+
+    struct arena arena;
+    memset(&arena, 0, sizeof(struct arena));
+    size_t tree_height = read_input(&arena);
 
     if (arena.used)
         print_tree(&arena, tree_height);
