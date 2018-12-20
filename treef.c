@@ -7,6 +7,20 @@
 
 #define ARENA_INITIAL_CAPACITY 8
 
+#if S_IFMT == 0170000
+#define MODE_SHIFT 12
+#else
+#error "Hardcoded S_IFMT does not match"
+#endif
+
+#define MODE(st_mode)((S_IFMT & (st_mode)) >> MODE_SHIFT)
+#define CSI "\x1b["
+
+// Do this differently on Mac/BSD and GNU/Linux?
+static const char *mode_sgr[S_IFMT >> MODE_SHIFT];
+const char *sgr0 = CSI "m";
+const char *empty_string = "";
+
 /**
  * A region to store a tree of nodes.
  *
@@ -30,7 +44,7 @@ struct node {
     const char *name;
     int sibling_idx;
     int child_idx;
-    mode_t mode;
+    int mode;
 };
 
 int flag_stat = 0;
@@ -49,7 +63,7 @@ void arena_prepare_add(struct arena *arena)
     }
 }
 
-int node_add(struct arena *arena, int parent_idx, int last_sibling_idx, const char *name, mode_t mode)
+int node_add(struct arena *arena, int parent_idx, int last_sibling_idx, const char *name, int mode)
 {
     arena_prepare_add(arena);
 
@@ -105,7 +119,7 @@ node_find(struct arena *arena, int parent_idx, const char *name, size_t len)
 }
 
 int
-node_find_or_add(struct arena *arena, int parent_idx, const char *name, size_t len, mode_t mode)
+node_find_or_add(struct arena *arena, int parent_idx, const char *name, size_t len, int mode)
 {
     struct find_result found = node_find(arena, parent_idx, name, len);
     if (found.node_idx >= 0)
@@ -114,7 +128,7 @@ node_find_or_add(struct arena *arena, int parent_idx, const char *name, size_t l
         return node_add(arena, parent_idx, found.last_sibling_idx, strndup(name, len), mode);
 }
 
-mode_t
+int
 stat_mode(const char *path)
 {
     if (flag_stat) {
@@ -122,7 +136,7 @@ stat_mode(const char *path)
         if (lstat(path, &st))
             return 0;
         else
-            return st.st_mode;
+            return MODE(st.st_mode);
     } else {
         return 0;
     }
@@ -133,7 +147,7 @@ stat_mode(const char *path)
  *
  * @return Height of the last component in path.
  */
-size_t path_add(struct arena *arena, int parent_idx, char *path, size_t off, mode_t mode)
+size_t path_add(struct arena *arena, int parent_idx, char *path, size_t off, int mode)
 {
     while (path[off] == '/') off++;
 
@@ -156,7 +170,7 @@ size_t path_add(struct arena *arena, int parent_idx, char *path, size_t off, mod
         if (found_parent.node_idx >= 0) {
             parent_idx = found_parent.node_idx;
         } else {
-            mode_t parent_mode;
+            int parent_mode;
             *slash = '\0';
             parent_mode = stat_mode(path);
             *slash = '/';
@@ -167,22 +181,22 @@ size_t path_add(struct arena *arena, int parent_idx, char *path, size_t off, mod
     }
 }
 
-static const char *
-color(mode_t mode)
+static void
+sgr_init()
 {
-    if (mode & S_IFREG)
-        return "\x1b[31m";
-    else if (mode & S_IFDIR)
-        return "\x1b[34m";
-    else
-        return "\x1b[m";
+    for (int i = 0; i < (S_IFMT >> MODE_SHIFT); ++i)
+        mode_sgr[i] = empty_string;
+
+    // TODO: read LSCOLORS and LS_COLORS
+    mode_sgr[MODE(S_IFREG)] = CSI "31m";
+    mode_sgr[MODE(S_IFDIR)] = CSI "34m";
 }
 
 void
 print_node(struct node node)
 {
-    if (node.mode)
-        printf("%s%s%s\n", color(node.mode), node.name, color(0));
+    if (flag_stat)
+        printf("%s%s%s\n", mode_sgr[node.mode], node.name, sgr0);
     else
         printf("%s\n", node.name);
 }
@@ -273,9 +287,10 @@ read_input(struct arena *arena)
 int
 main(int argc, char *argv[])
 {
-    if (argc == 2 && !strcmp(argv[1], "-s"))
+    if (argc == 2 && !strcmp(argv[1], "-s")) {
         flag_stat = 1;
-    else if (argc > 1) {
+        sgr_init();
+    } else if (argc > 1) {
         fprintf(stderr, "usage: treef [-s]\n");
         return 1;
     }
