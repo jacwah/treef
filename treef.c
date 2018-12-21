@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <unistd.h>
 #include <sys/stat.h>
 
 #define ARENA_INITIAL_CAPACITY 8
@@ -48,7 +49,7 @@ struct node {
     int mode;
 };
 
-int flag_stat = 0;
+int flag_stat = -1;
 
 void arena_prepare_add(struct arena *arena)
 {
@@ -343,6 +344,8 @@ sgr_init()
         parse_bsd_colors(bsdcolors);
     else if (clicolor)
         set_default_bsd_colors();
+    else if (flag_stat < 0)
+        flag_stat = 0;
 }
 
 void
@@ -437,16 +440,34 @@ read_input(struct arena *arena)
     return tree_height;
 }
 
+static void
+usage()
+{
+    fprintf(stderr, "usage: treef [-s | -S]\n");
+    exit(1);
+}
+
 int
 main(int argc, char *argv[])
 {
-    if (argc == 2 && !strcmp(argv[1], "-s")) {
-        flag_stat = 1;
-        sgr_init();
-    } else if (argc > 1) {
-        fprintf(stderr, "usage: treef [-s]\n");
-        return 1;
+    for (int i = 1; i < argc; ++i) {
+        char *opt = argv[i];
+        if (opt[0] == '-' && opt[1]) {
+            while (*++opt) {
+                switch (*opt) {
+                    case 's': flag_stat = 1; break;
+                    case 'S': flag_stat = 0; break;
+                    default: usage();
+                }
+            }
+        } else {
+            usage();
+        }
     }
+    if (flag_stat == -1 && !isatty(1))
+        flag_stat = 0;
+    else if (flag_stat)
+        sgr_init();
 
     struct arena arena;
     memset(&arena, 0, sizeof(struct arena));
