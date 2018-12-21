@@ -7,13 +7,19 @@ TARGET = treef
 PREFIX = /usr/local
 BINDIR = $(DESTDIR)$(PREFIX)/bin
 
+OBJ = $(patsubst %.c, %.o, $(wildcard *.c))
+
 all: $(TARGET)
 
-$(TARGET): treef.c
+$(TARGET): $(OBJ)
 	@$(CC) $(CFLAGS) -o $@ $^
+
+%.o: %.c
+	@$(CC) $(CFLAGS) -c $<
 
 clean:
 	@$(RM) $(TARGET)
+	@$(RM) $(OBJ)
 	@$(RM) -r $(TARGET).dSYM
 
 test: $(TARGET)

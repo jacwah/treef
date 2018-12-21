@@ -6,6 +6,7 @@
 #include <ctype.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include "nstr.h"
 
 #define ARENA_INITIAL_CAPACITY 8
 
@@ -19,9 +20,11 @@
 #define CSI "\x1b["
 
 // Do this differently on Mac/BSD and GNU/Linux?
-static const char *mode_sgr[S_IFMT >> MODE_SHIFT];
-const char *sgr0 = CSI "m";
-const char *empty_string = "";
+static struct nstr *mode_sgr[S_IFMT >> MODE_SHIFT];
+static struct nstr empty_string;
+static struct nstr *sgr0_eol;
+
+static struct nstr_block nstrb;
 
 /**
  * A region to store a tree of nodes.
@@ -189,67 +192,62 @@ parse_gnu_colors(char *colors)
     puts(colors);
 }
 
-static char *
+static struct nstr *
 bsd_sgr(char f, char b)
 {
-    int bold = isupper(f);
-    int setf = f != 'x';
-    int setb = b != 'x';
-    int size = 2+(bold+setf+setb)*3+1;
-    char *sgr = malloc((size_t)size);
-    char *aptr = sgr;
-    strcpy(aptr, CSI);
-    aptr += 2;
-    char *ptr = aptr;
-    const char *attr = NULL;
-    f = (char)tolower(f);
+    if (f == 'x' && b == 'x')
+        return &empty_string;
+    // ESC [ff;bb;am
+    struct nstr *sgr = nstr_alloc(&nstrb, 10);
 
-    if (setf) {
+    sgr->str[sgr->n++] = '\x1b';
+    sgr->str[sgr->n++] = '[';
+
+    if (isupper(f)) {
+        sgr->str[sgr->n++] = '1';
+    }
+
+    if (f != 'x') {
+        char color;
+
+        if (sgr->n != 2)
+            sgr->str[sgr->n++] = ';';
+
         switch (f) {
-            case 'a': attr = "30"; break;
-            case 'b': attr = "31"; break;
-            case 'c': attr = "32"; break;
-            case 'd': attr = "33"; break;
-            case 'e': attr = "34"; break;
-            case 'f': attr = "35"; break;
-            case 'g': attr = "36"; break;
-            case 'h': attr = "37"; break;
+            case 'a': color = '0'; break;
+            case 'b': color = '1'; break;
+            case 'c': color = '2'; break;
+            case 'd': color = '3'; break;
+            case 'e': color = '4'; break;
+            case 'f': color = '5'; break;
+            case 'g': color = '6'; break;
+            case 'h': color = '7'; break;
         }
-        strcpy(ptr, attr);
-        ptr += 2;
+        sgr->str[sgr->n++] = '3';
+        sgr->str[sgr->n++] = color;
     }
 
-    if (setb) {
-        switch (f) {
-            case 'a': attr = "40"; break;
-            case 'b': attr = "41"; break;
-            case 'c': attr = "42"; break;
-            case 'd': attr = "43"; break;
-            case 'e': attr = "44"; break;
-            case 'f': attr = "45"; break;
-            case 'g': attr = "46"; break;
-            case 'h': attr = "47"; break;
+    if (b != 'x') {
+        char color;
+
+        if (sgr->n != 2)
+            sgr->str[sgr->n++] = ';';
+
+        switch (b) {
+            case 'a': color = '0'; break;
+            case 'b': color = '1'; break;
+            case 'c': color = '2'; break;
+            case 'd': color = '3'; break;
+            case 'e': color = '4'; break;
+            case 'f': color = '5'; break;
+            case 'g': color = '6'; break;
+            case 'h': color = '7'; break;
         }
-        if (ptr != aptr) {
-            *ptr = ';';
-            ++ptr;
-        }
-        strcpy(ptr, attr);
-        ptr += 2;
+        sgr->str[sgr->n++] = '4';
+        sgr->str[sgr->n++] = color;
     }
 
-    if (bold) {
-        if (ptr != aptr) {
-            *ptr = ';';
-            ++ptr;
-        }
-        *ptr = '1';
-        ++ptr;
-    }
-
-    *ptr = 'm';
-    ++ptr;
-    *ptr = '\0';
+    sgr->str[sgr->n++] = 'm';
     return sgr;
 }
 
@@ -335,8 +333,15 @@ sgr_init()
     char *bsdcolors = getenv("LSCOLORS");;
     char *clicolor = getenv("CLICOLOR");;
 
-    for (int i = 0; i < (S_IFMT >> MODE_SHIFT); ++i)
-        mode_sgr[i] = empty_string;
+    for (int i = 1; i < (S_IFMT >> MODE_SHIFT); ++i)
+        mode_sgr[i] = &empty_string;
+
+    sgr0_eol = nstr_alloc(&nstrb, 4);
+    sgr0_eol->str[0] = '\x1b';
+    sgr0_eol->str[1] = '[';
+    sgr0_eol->str[2] = 'm';
+    sgr0_eol->str[3] = '\n';
+    sgr0_eol->n = 4;
 
     if (gnucolors && *gnucolors)
         parse_gnu_colors(gnucolors);
@@ -351,9 +356,13 @@ sgr_init()
 void
 print_node(struct node node)
 {
-    if (flag_stat)
-        printf("%s%s%s\n", mode_sgr[node.mode], node.name, sgr0);
-    else
+
+    if (flag_stat) {
+        fwrite(mode_sgr[node.mode]->str, 1, mode_sgr[node.mode]->n, stdout);
+        fwrite(node.name, 1, strlen(node.name), stdout);
+        fwrite(sgr0_eol->str, 1, sgr0_eol->n, stdout);
+
+    } else
         printf("%s\n", node.name);
 }
 
@@ -464,6 +473,8 @@ main(int argc, char *argv[])
             usage();
         }
     }
+    nstr_init(&nstrb);
+
     if (flag_stat == -1 && !isatty(1))
         flag_stat = 0;
     else if (flag_stat)
@@ -475,4 +486,6 @@ main(int argc, char *argv[])
 
     if (arena.used)
         print_tree(&arena, tree_height);
+
+    fprintf(stderr, "nstr: o=%d s=%d w=%d\n", nstrb.offset, nstrb.size, nstrb.waste);
 }
