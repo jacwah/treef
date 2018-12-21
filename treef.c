@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #include <sys/stat.h>
 
 #define ARENA_INITIAL_CAPACITY 8
@@ -182,14 +183,166 @@ size_t path_add(struct arena *arena, int parent_idx, char *path, size_t off, int
 }
 
 static void
+parse_gnu_colors(char *colors)
+{
+    puts(colors);
+}
+
+static char *
+bsd_sgr(char f, char b)
+{
+    int bold = isupper(f);
+    int setf = f != 'x';
+    int setb = b != 'x';
+    int size = 2+(bold+setf+setb)*3+1;
+    char *sgr = malloc((size_t)size);
+    char *aptr = sgr;
+    strcpy(aptr, CSI);
+    aptr += 2;
+    char *ptr = aptr;
+    const char *attr = NULL;
+    f = (char)tolower(f);
+
+    if (setf) {
+        switch (f) {
+            case 'a': attr = "30"; break;
+            case 'b': attr = "31"; break;
+            case 'c': attr = "32"; break;
+            case 'd': attr = "33"; break;
+            case 'e': attr = "34"; break;
+            case 'f': attr = "35"; break;
+            case 'g': attr = "36"; break;
+            case 'h': attr = "37"; break;
+        }
+        strcpy(ptr, attr);
+        ptr += 2;
+    }
+
+    if (setb) {
+        switch (f) {
+            case 'a': attr = "40"; break;
+            case 'b': attr = "41"; break;
+            case 'c': attr = "42"; break;
+            case 'd': attr = "43"; break;
+            case 'e': attr = "44"; break;
+            case 'f': attr = "45"; break;
+            case 'g': attr = "46"; break;
+            case 'h': attr = "47"; break;
+        }
+        if (ptr != aptr) {
+            *ptr = ';';
+            ++ptr;
+        }
+        strcpy(ptr, attr);
+        ptr += 2;
+    }
+
+    if (bold) {
+        if (ptr != aptr) {
+            *ptr = ';';
+            ++ptr;
+        }
+        *ptr = '1';
+        ++ptr;
+    }
+
+    *ptr = 'm';
+    ++ptr;
+    *ptr = '\0';
+    return sgr;
+}
+
+static void
+parse_bsd_colors(const char *colors)
+{
+    /* From man ls: */
+
+    /*
+    1.	directory
+    2.	symbolic link
+    3.	socket
+    4.	pipe
+    5.	executable
+    6.	block special
+    7.	character special
+    8.	executable with setuid bit set
+    9.	executable with setgid bit set
+    10.	directory writable to others, with sticky bit
+    11.	directory writable to others, without sticky bit
+    */
+
+    /*
+    a	 black
+    b	 red
+    c	 green
+    d	 brown
+    e	 blue
+    f	 magenta
+    g	 cyan
+    h	 light grey
+    A	 bold black, usually shows up as dark grey
+    B	 bold red
+    C	 bold green
+    D	 bold brown, usually shows up as yellow
+    E	 bold blue
+    F	 bold magenta
+    G	 bold cyan
+    H	 bold light grey; looks like bright white
+    x	 default foreground or background
+    */
+
+    int len = 0;
+    while (len < 2*11) {
+        if (!colors[len] || !colors[len+1])
+            break;
+        if (colors[len] != 'x' && (tolower(colors[len]) < 'a' || tolower(colors[len]) > 'h'))
+            break;
+        if (colors[len+1] != 'x' && (colors[len+1] < 'a' || colors[len+1] > 'h'))
+            break;
+        len += 2;
+    }
+
+    if (len == 2*11) {
+        mode_sgr[MODE(S_IFDIR)] = bsd_sgr(colors[0],  colors[1]);
+        mode_sgr[MODE(S_IFLNK)] = bsd_sgr(colors[2],  colors[3]);
+        mode_sgr[MODE(S_IFSOCK)]= bsd_sgr(colors[4],  colors[5]);
+        mode_sgr[MODE(S_IFIFO)] = bsd_sgr(colors[6],  colors[7]);
+        /*
+        mode_sgr[MODE(S_IFDIR)] = bsd_sgr(colors[8],  colors[9]);
+        mode_sgr[MODE(S_IFDIR)] = bsd_sgr(colors[10], colors[11]);
+        mode_sgr[MODE(S_IFDIR)] = bsd_sgr(colors[12], colors[13]);
+        mode_sgr[MODE(S_IFDIR)] = bsd_sgr(colors[14], colors[15]);
+        mode_sgr[MODE(S_IFDIR)] = bsd_sgr(colors[16], colors[17]);
+        mode_sgr[MODE(S_IFDIR)] = bsd_sgr(colors[18], colors[19]);
+        mode_sgr[MODE(S_IFDIR)] = bsd_sgr(colors[20], colors[21]);
+        */
+    } else {
+        fprintf(stderr, "warning: invalid LSCOLORS value\n");
+    }
+}
+
+static void
+set_default_bsd_colors()
+{
+    parse_bsd_colors("exfxcxdxbxegedabagacad");
+}
+
+static void
 sgr_init()
 {
+    char *gnucolors = getenv("LS_COLORS");
+    char *bsdcolors = getenv("LSCOLORS");;
+    char *clicolor = getenv("CLICOLOR");;
+
     for (int i = 0; i < (S_IFMT >> MODE_SHIFT); ++i)
         mode_sgr[i] = empty_string;
 
-    // TODO: read LSCOLORS and LS_COLORS
-    mode_sgr[MODE(S_IFREG)] = CSI "31m";
-    mode_sgr[MODE(S_IFDIR)] = CSI "34m";
+    if (gnucolors && *gnucolors)
+        parse_gnu_colors(gnucolors);
+    else if (bsdcolors && *bsdcolors)
+        parse_bsd_colors(bsdcolors);
+    else if (clicolor)
+        set_default_bsd_colors();
 }
 
 void
