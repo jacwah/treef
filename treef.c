@@ -5,6 +5,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <unistd.h>
+#include <stdbool.h>
 #include <sys/stat.h>
 #include "nstr.h"
 
@@ -52,7 +53,7 @@ struct node {
     int mode;
 };
 
-int flag_stat = -1;
+enum { OFF, ON, AUTO } flag_stat = AUTO;
 
 void arena_prepare_add(struct arena *arena)
 {
@@ -187,11 +188,11 @@ size_t path_add(struct arena *arena, int parent_idx, char *path, int off, int mo
     }
 }
 
-static int
+static bool
 parse_gnu_colors(char *colors)
 {
     puts(colors);
-    return 0;
+    return false;
 }
 
 static struct nstr *
@@ -253,7 +254,7 @@ bsd_sgr(char f, char b)
     return sgr;
 }
 
-static int
+static bool
 parse_bsd_colors(const char *colors)
 {
     /* From man ls: */
@@ -317,20 +318,20 @@ parse_bsd_colors(const char *colors)
         mode_sgr[MODE(S_IFDIR)] = bsd_sgr(colors[18], colors[19]);
         mode_sgr[MODE(S_IFDIR)] = bsd_sgr(colors[20], colors[21]);
         */
-        return 1;
+        return true;
     } else {
         fprintf(stderr, "warning: invalid LSCOLORS value\n");
-        return 0;
+        return false;
     }
 }
 
-static int
+static bool
 set_default_bsd_colors()
 {
     return parse_bsd_colors("exfxcxdxbxegedabagacad");
 }
 
-static int
+static bool
 sgr_init()
 {
     char *gnucolors = getenv("LS_COLORS");
@@ -354,7 +355,7 @@ sgr_init()
     else if (clicolor)
         return set_default_bsd_colors();
     else
-        return 0;
+        return false;
 }
 
 void
@@ -469,8 +470,8 @@ main(int argc, char *argv[])
         if (opt[0] == '-' && opt[1]) {
             while (*++opt) {
                 switch (*opt) {
-                    case 's': flag_stat = 1; break;
-                    case 'S': flag_stat = 0; break;
+                    case 's': flag_stat = ON; break;
+                    case 'S': flag_stat = OFF; break;
                     default: usage();
                 }
             }
@@ -480,10 +481,10 @@ main(int argc, char *argv[])
     }
     nstr_init(&nstrb);
 
-    if (flag_stat == -1 && !isatty(1))
-        flag_stat = 0;
-    else if (flag_stat)
-        flag_stat = sgr_init();
+    if (flag_stat == AUTO && !isatty(1))
+        flag_stat = OFF;
+    else if (flag_stat && !sgr_init())
+        flag_stat = OFF;
 
     struct arena arena;
     memset(&arena, 0, sizeof(struct arena));
