@@ -41,6 +41,7 @@ nstr_alloc(struct nstr_block *block, int n)
     block->offset += size;
 #ifdef NSTR_STATS
     block->total += size;
+    block->waste += n % 2;
 #endif
     return result;
 }
@@ -53,3 +54,17 @@ nstr_dup(struct nstr_block *block, int n, char *str)
     ns->n = (uint16_t)n;
     return ns;
 }
+
+#ifdef NSTR_STATS
+#include <stdio.h>
+void
+nstr_print_stats(struct nstr_block *block)
+{
+    int alloced = block->total + block->size - block->offset;
+    int real_waste = block->waste + block->size - block->offset;
+    float waste_percent = (100.0f*real_waste)/alloced;
+    fprintf(stderr, "nstr stats: s=%d a=%d t=%d w=%d (%f%%)\n",
+            block->size, alloced, block->total,
+            real_waste, waste_percent);
+}
+#endif

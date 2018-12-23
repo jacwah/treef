@@ -22,3 +22,8 @@ nstr_alloc(struct nstr_block *block, int n);
 
 struct nstr *
 nstr_dup(struct nstr_block *block, int n, char *str);
+
+#ifdef NSTR_STATS
+void
+nstr_print_stats(struct nstr_block *block);
+#endif

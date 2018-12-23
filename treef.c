@@ -494,8 +494,6 @@ main(int argc, char *argv[])
         print_tree(&arena, tree_height);
 
 #ifdef NSTR_STATS
-    fprintf(stderr, "nstr: o=%d s=%d t=%d w=%d (%f%%)\n",
-            nstrb.offset, nstrb.size, nstrb.total,
-            nstrb.waste, (float)nstrb.waste/(float)nstrb.total);
+    nstr_print_stats(&nstrb);
 #endif
 }
