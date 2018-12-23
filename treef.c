@@ -46,7 +46,7 @@ struct arena {
  * tree.
  */
 struct node {
-    const char *name;
+    struct nstr *name;
     int sibling_idx;
     int child_idx;
     int mode;
@@ -68,7 +68,8 @@ void arena_prepare_add(struct arena *arena)
     }
 }
 
-int node_add(struct arena *arena, int parent_idx, int last_sibling_idx, const char *name, int mode)
+static int
+node_add(struct arena *arena, int parent_idx, int last_sibling_idx, struct nstr *name, int mode)
 {
     arena_prepare_add(arena);
 
@@ -92,8 +93,8 @@ struct find_result {
     int last_sibling_idx;
 };
 
-struct find_result
-node_find(struct arena *arena, int parent_idx, const char *name, size_t len)
+static struct find_result
+node_find(struct arena *arena, int parent_idx, char *name, int len)
 {
     struct find_result result;
     result.last_sibling_idx = -1;
@@ -108,8 +109,8 @@ node_find(struct arena *arena, int parent_idx, const char *name, size_t len)
 
         while (sibling_idx >= 0) {
             // If this node already exists, no need to add it again
-            const char *sibling_name = arena->nodes[sibling_idx].name;
-            if (!strncmp(sibling_name, name, len) && sibling_name[len] == '\0') {
+            struct nstr *sibling_name = arena->nodes[sibling_idx].name;
+            if (sibling_name->n == len && !memcmp(sibling_name->str, name, (size_t)len)) {
                 result.node_idx = sibling_idx;
                 return result;
             }
@@ -124,13 +125,13 @@ node_find(struct arena *arena, int parent_idx, const char *name, size_t len)
 }
 
 int
-node_find_or_add(struct arena *arena, int parent_idx, const char *name, size_t len, int mode)
+node_find_or_add(struct arena *arena, int parent_idx, char *name, int len, int mode)
 {
     struct find_result found = node_find(arena, parent_idx, name, len);
     if (found.node_idx >= 0)
         return found.node_idx;
     else
-        return node_add(arena, parent_idx, found.last_sibling_idx, strndup(name, len), mode);
+        return node_add(arena, parent_idx, found.last_sibling_idx, nstr_dup(&nstrb, len, name), mode);
 }
 
 int
@@ -152,7 +153,7 @@ stat_mode(const char *path)
  *
  * @return Height of the last component in path.
  */
-size_t path_add(struct arena *arena, int parent_idx, char *path, size_t off, int mode)
+size_t path_add(struct arena *arena, int parent_idx, char *path, int off, int mode)
 {
     while (path[off] == '/') off++;
 
@@ -164,12 +165,12 @@ size_t path_add(struct arena *arena, int parent_idx, char *path, size_t off, int
 
     if (!slash) {
         // Leaf node
-        node_find_or_add(arena, parent_idx, path+off, strlen(path+off), mode);
+        // TODO strchr with len
+        node_find_or_add(arena, parent_idx, path+off, (int)strlen(path+off), mode);
         return 1;
     } else {
-        // "abc/def": end = path + 3 -> end - path = 3 -> path[end - path] = '/'
         int grandparent_idx = parent_idx;
-        size_t len = (size_t)(slash - (path + off));
+        int len = (int)(slash-path)-off;
         struct find_result found_parent = node_find(arena, grandparent_idx, path+off, len);
 
         if (found_parent.node_idx >= 0) {
@@ -179,17 +180,18 @@ size_t path_add(struct arena *arena, int parent_idx, char *path, size_t off, int
             *slash = '\0';
             parent_mode = stat_mode(path);
             *slash = '/';
-            parent_idx = node_add(arena, grandparent_idx, found_parent.last_sibling_idx, strndup(path+off, len), parent_mode);
+            parent_idx = node_add(arena, grandparent_idx, found_parent.last_sibling_idx, nstr_dup(&nstrb, len, path+off), parent_mode);
         }
 
         return 1 + path_add(arena, parent_idx, path, off+len+1, mode);
     }
 }
 
-static void
+static int
 parse_gnu_colors(char *colors)
 {
     puts(colors);
+    return 0;
 }
 
 static struct nstr *
@@ -251,7 +253,7 @@ bsd_sgr(char f, char b)
     return sgr;
 }
 
-static void
+static int
 parse_bsd_colors(const char *colors)
 {
     /* From man ls: */
@@ -315,25 +317,27 @@ parse_bsd_colors(const char *colors)
         mode_sgr[MODE(S_IFDIR)] = bsd_sgr(colors[18], colors[19]);
         mode_sgr[MODE(S_IFDIR)] = bsd_sgr(colors[20], colors[21]);
         */
+        return 1;
     } else {
         fprintf(stderr, "warning: invalid LSCOLORS value\n");
+        return 0;
     }
 }
 
-static void
+static int
 set_default_bsd_colors()
 {
-    parse_bsd_colors("exfxcxdxbxegedabagacad");
+    return parse_bsd_colors("exfxcxdxbxegedabagacad");
 }
 
-static void
+static int
 sgr_init()
 {
     char *gnucolors = getenv("LS_COLORS");
     char *bsdcolors = getenv("LSCOLORS");;
     char *clicolor = getenv("CLICOLOR");;
 
-    for (int i = 1; i < (S_IFMT >> MODE_SHIFT); ++i)
+    for (int i = 0; i < (S_IFMT >> MODE_SHIFT); ++i)
         mode_sgr[i] = &empty_string;
 
     sgr0_eol = nstr_alloc(&nstrb, 4);
@@ -344,26 +348,27 @@ sgr_init()
     sgr0_eol->n = 4;
 
     if (gnucolors && *gnucolors)
-        parse_gnu_colors(gnucolors);
+        return parse_gnu_colors(gnucolors);
     else if (bsdcolors && *bsdcolors)
-        parse_bsd_colors(bsdcolors);
+        return parse_bsd_colors(bsdcolors);
     else if (clicolor)
-        set_default_bsd_colors();
-    else if (flag_stat < 0)
-        flag_stat = 0;
+        return set_default_bsd_colors();
+    else
+        return 0;
 }
 
 void
 print_node(struct node node)
 {
-
     if (flag_stat) {
         fwrite(mode_sgr[node.mode]->str, 1, mode_sgr[node.mode]->n, stdout);
-        fwrite(node.name, 1, strlen(node.name), stdout);
+        fwrite(node.name->str, 1, node.name->n, stdout);
         fwrite(sgr0_eol->str, 1, sgr0_eol->n, stdout);
 
-    } else
-        printf("%s\n", node.name);
+    } else {
+        fwrite(node.name->str, 1, node.name->n, stdout);
+        putc('\n', stdout);
+    }
 }
 
 /**
@@ -478,7 +483,7 @@ main(int argc, char *argv[])
     if (flag_stat == -1 && !isatty(1))
         flag_stat = 0;
     else if (flag_stat)
-        sgr_init();
+        flag_stat = sgr_init();
 
     struct arena arena;
     memset(&arena, 0, sizeof(struct arena));
@@ -487,5 +492,9 @@ main(int argc, char *argv[])
     if (arena.used)
         print_tree(&arena, tree_height);
 
-    fprintf(stderr, "nstr: o=%d s=%d w=%d\n", nstrb.offset, nstrb.size, nstrb.waste);
+#ifdef NSTR_STATS
+    fprintf(stderr, "nstr: o=%d s=%d t=%d w=%d (%f%%)\n",
+            nstrb.offset, nstrb.size, nstrb.total,
+            nstrb.waste, (float)nstrb.waste/(float)nstrb.total);
+#endif
 }

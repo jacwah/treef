@@ -25,7 +25,7 @@ do
     path=${infile%.in}
     name=${path##*/}
 
-    diff=$($DIFF ${path}.out <($VALGRIND $TREEF < "$infile"))
+    diff=$($DIFF --text ${path}.out <($VALGRIND $TREEF < "$infile"))
 
     if [ -z "$diff" ]
     then
