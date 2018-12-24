@@ -11,17 +11,26 @@
 
 #define ARENA_INITIAL_CAPACITY 8
 
-#if S_IFMT == 0170000
-#define MODE_SHIFT 12
-#else
-#error "Hardcoded S_IFMT does not match"
-#endif
+enum type {
+    TYPE_NONE,
+    TYPE_FILE,
+    TYPE_DIR,
+    TYPE_LINK,
+    TYPE_PIPE,
+    TYPE_SOCK,
+    TYPE_BLOCK,
+    TYPE_CHAR,
+    //TYPE_ORPHAN,
+    TYPE_EXEC,
+    TYPE_SUID,
+    TYPE_SGID,
+    //TYPE_STICKY,
+    TYPE_OTHR,
+    TYPE_OTHRS,
+    TYPE_COUNT
+};
 
-#define MODE(st_mode)((S_IFMT & (st_mode)) >> MODE_SHIFT)
-#define CSI "\x1b["
-
-// Do this differently on Mac/BSD and GNU/Linux?
-static struct nstr *mode_sgr[S_IFMT >> MODE_SHIFT];
+static struct nstr *type_sgr[TYPE_COUNT];
 static struct nstr empty_string;
 static struct nstr *sgr0_eol;
 
@@ -50,7 +59,7 @@ struct node {
     struct nstr *name;
     int sibling_idx;
     int child_idx;
-    int mode;
+    enum type type;
 };
 
 enum { OFF, ON, AUTO } flag_stat = AUTO;
@@ -70,7 +79,7 @@ void arena_prepare_add(struct arena *arena)
 }
 
 static int
-node_add(struct arena *arena, int parent_idx, int last_sibling_idx, struct nstr *name, int mode)
+node_add(struct arena *arena, int parent_idx, int last_sibling_idx, struct nstr *name, enum type type)
 {
     arena_prepare_add(arena);
 
@@ -78,7 +87,7 @@ node_add(struct arena *arena, int parent_idx, int last_sibling_idx, struct nstr 
     new->name = name;
     new->sibling_idx = -1;
     new->child_idx = -1;
-    new->mode = mode;
+    new->type = type;
 
     // Link node into the tree
     if (last_sibling_idx >= 0)
@@ -126,26 +135,56 @@ node_find(struct arena *arena, int parent_idx, char *name, int len)
 }
 
 int
-node_find_or_add(struct arena *arena, int parent_idx, char *name, int len, int mode)
+node_find_or_add(struct arena *arena, int parent_idx, char *name, int len, enum type type)
 {
     struct find_result found = node_find(arena, parent_idx, name, len);
     if (found.node_idx >= 0)
         return found.node_idx;
     else
-        return node_add(arena, parent_idx, found.last_sibling_idx, nstr_dup(&nstrb, len, name), mode);
+        return node_add(arena, parent_idx, found.last_sibling_idx, nstr_dup(&nstrb, len, name), type);
 }
 
-int
-stat_mode(const char *path)
+enum type
+get_type(const char *path)
 {
     if (flag_stat) {
         struct stat st;
-        if (lstat(path, &st))
-            return 0;
-        else
-            return MODE(st.st_mode);
+        if (lstat(path, &st)) {
+            return TYPE_NONE;
+        } else {
+            switch (S_IFMT & st.st_mode) {
+                case S_IFIFO:
+                    return TYPE_PIPE;
+                case S_IFCHR:
+                    return TYPE_CHAR;
+                case S_IFDIR:
+                    // TODO: sticky, ow
+                    return TYPE_DIR;
+                case S_IFBLK:
+                    return TYPE_BLOCK;
+                case S_IFREG:
+                    // GNU checks in this order - seems arbitrary?
+                    if (S_IXUSR & st.st_mode)
+                        if (S_ISUID & st.st_mode)
+                            return TYPE_SUID;
+                        else if (S_ISGID & st.st_mode)
+                            return TYPE_SGID;
+                        else
+                            return TYPE_EXEC;
+                    else
+                        return TYPE_FILE;
+                case S_IFLNK:
+                    // TODO: orphan?
+                    return TYPE_LINK;
+                case S_IFSOCK:
+                    return TYPE_SOCK;
+                //case S_IFWHT: whiteout
+                default:
+                    return TYPE_NONE;
+            }
+        }
     } else {
-        return 0;
+        return TYPE_NONE;
     }
 }
 
@@ -154,7 +193,7 @@ stat_mode(const char *path)
  *
  * @return Height of the last component in path.
  */
-size_t path_add(struct arena *arena, int parent_idx, char *path, int off, int mode)
+size_t path_add(struct arena *arena, int parent_idx, char *path, int off, enum type type)
 {
     while (path[off] == '/') off++;
 
@@ -167,7 +206,7 @@ size_t path_add(struct arena *arena, int parent_idx, char *path, int off, int mo
     if (!slash) {
         // Leaf node
         // TODO strchr with len
-        node_find_or_add(arena, parent_idx, path+off, (int)strlen(path+off), mode);
+        node_find_or_add(arena, parent_idx, path+off, (int)strlen(path+off), type);
         return 1;
     } else {
         int grandparent_idx = parent_idx;
@@ -177,14 +216,14 @@ size_t path_add(struct arena *arena, int parent_idx, char *path, int off, int mo
         if (found_parent.node_idx >= 0) {
             parent_idx = found_parent.node_idx;
         } else {
-            int parent_mode;
+            enum type parent_type;
             *slash = '\0';
-            parent_mode = stat_mode(path);
+            parent_type = get_type(path);
             *slash = '/';
-            parent_idx = node_add(arena, grandparent_idx, found_parent.last_sibling_idx, nstr_dup(&nstrb, len, path+off), parent_mode);
+            parent_idx = node_add(arena, grandparent_idx, found_parent.last_sibling_idx, nstr_dup(&nstrb, len, path+off), parent_type);
         }
 
-        return 1 + path_add(arena, parent_idx, path, off+len+1, mode);
+        return 1 + path_add(arena, parent_idx, path, off+len+1, type);
     }
 }
 
@@ -305,19 +344,17 @@ parse_bsd_colors(const char *colors)
     }
 
     if (len == 2*11) {
-        mode_sgr[MODE(S_IFDIR)] = bsd_sgr(colors[0],  colors[1]);
-        mode_sgr[MODE(S_IFLNK)] = bsd_sgr(colors[2],  colors[3]);
-        mode_sgr[MODE(S_IFSOCK)]= bsd_sgr(colors[4],  colors[5]);
-        mode_sgr[MODE(S_IFIFO)] = bsd_sgr(colors[6],  colors[7]);
-        /*
-        mode_sgr[MODE(S_IFDIR)] = bsd_sgr(colors[8],  colors[9]);
-        mode_sgr[MODE(S_IFDIR)] = bsd_sgr(colors[10], colors[11]);
-        mode_sgr[MODE(S_IFDIR)] = bsd_sgr(colors[12], colors[13]);
-        mode_sgr[MODE(S_IFDIR)] = bsd_sgr(colors[14], colors[15]);
-        mode_sgr[MODE(S_IFDIR)] = bsd_sgr(colors[16], colors[17]);
-        mode_sgr[MODE(S_IFDIR)] = bsd_sgr(colors[18], colors[19]);
-        mode_sgr[MODE(S_IFDIR)] = bsd_sgr(colors[20], colors[21]);
-        */
+        type_sgr[TYPE_DIR]  = bsd_sgr(colors[0],  colors[1]);
+        type_sgr[TYPE_LINK] = bsd_sgr(colors[2],  colors[3]);
+        type_sgr[TYPE_SOCK] = bsd_sgr(colors[4],  colors[5]);
+        type_sgr[TYPE_PIPE] = bsd_sgr(colors[6],  colors[7]);
+        type_sgr[TYPE_EXEC] = bsd_sgr(colors[8],  colors[9]);
+        type_sgr[TYPE_BLOCK]= bsd_sgr(colors[10], colors[11]);
+        type_sgr[TYPE_CHAR] = bsd_sgr(colors[12], colors[13]);
+        type_sgr[TYPE_SUID] = bsd_sgr(colors[14], colors[15]);
+        type_sgr[TYPE_SGID] = bsd_sgr(colors[16], colors[17]);
+        type_sgr[TYPE_OTHRS]= bsd_sgr(colors[18], colors[19]);
+        type_sgr[TYPE_OTHR] = bsd_sgr(colors[20], colors[21]);
         return true;
     } else {
         fprintf(stderr, "warning: invalid LSCOLORS value\n");
@@ -334,12 +371,8 @@ set_default_bsd_colors()
 static bool
 sgr_init()
 {
-    char *gnucolors = getenv("LS_COLORS");
-    char *bsdcolors = getenv("LSCOLORS");;
-    char *clicolor = getenv("CLICOLOR");;
-
-    for (int i = 0; i < (S_IFMT >> MODE_SHIFT); ++i)
-        mode_sgr[i] = &empty_string;
+    for (int i = 0; i < TYPE_COUNT; ++i)
+        type_sgr[i] = &empty_string;
 
     sgr0_eol = nstr_alloc(&nstrb, 4);
     sgr0_eol->str[0] = '\x1b';
@@ -348,12 +381,17 @@ sgr_init()
     sgr0_eol->str[3] = '\n';
     sgr0_eol->n = 4;
 
-    if (gnucolors && *gnucolors)
-        return parse_gnu_colors(gnucolors);
-    else if (bsdcolors && *bsdcolors)
-        return parse_bsd_colors(bsdcolors);
-    else if (clicolor)
+    char *env;
+    if ((env = getenv("LS_COLORS")) && *env && parse_gnu_colors(env))
+        return true;
+    else if ((env = getenv("LSCOLORS")) && *env && parse_bsd_colors(env))
+        return true;
+    else if (getenv("CLICOLOR"))
         return set_default_bsd_colors();
+#if 0
+    else if (getenv("TERMCOLOR"))
+        return set_default_gnu_colors;
+#endif
     else
         return false;
 }
@@ -362,7 +400,7 @@ void
 print_node(struct node node)
 {
     if (flag_stat) {
-        fwrite(mode_sgr[node.mode]->str, 1, mode_sgr[node.mode]->n, stdout);
+        fwrite(type_sgr[node.type]->str, 1, type_sgr[node.type]->n, stdout);
         fwrite(node.name->str, 1, node.name->n, stdout);
         fwrite(sgr0_eol->str, 1, sgr0_eol->n, stdout);
 
@@ -446,7 +484,8 @@ read_input(struct arena *arena)
         if (line[nread - 1] == '\n')
             line[nread - 1] = '\0';
 
-        size_t height = path_add(arena, -1, line, 0, stat_mode(line));
+        // TODO: we know line length here; pass on
+        size_t height = path_add(arena, -1, line, 0, get_type(line));
 
         if (height > tree_height)
             tree_height = height;
