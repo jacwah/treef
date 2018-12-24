@@ -1,7 +1,8 @@
 #include <stdint.h>
+
 struct nstr {
     uint16_t n;
-    char str[1];
+    char str[];
 };
 
 struct nstr_block {

@@ -24,8 +24,7 @@ struct nstr *
 nstr_alloc(struct nstr_block *block, int n)
 {
     struct nstr *result;
-    // Align to size of nstr.n
-    int size = 2 + ALIGNUP(n, 2);
+    int size = (int)sizeof(struct nstr) + ALIGNUP(n, (int)sizeof(struct nstr));
 
     if (size > block->size - block->offset) {
 #ifdef NSTR_STATS
@@ -36,12 +35,11 @@ nstr_alloc(struct nstr_block *block, int n)
         block->offset = 0;
     }
 
-    result = (struct nstr *)__builtin_assume_aligned(block->data + block->offset, 2);
-    result->n = 0;
+    result = (struct nstr *)__builtin_assume_aligned(block->data + block->offset, sizeof(struct nstr));
     block->offset += size;
 #ifdef NSTR_STATS
     block->total += size;
-    block->waste += n % 2;
+    block->waste += n % (int)sizeof(struct nstr);
 #endif
     return result;
 }
