@@ -1,23 +1,28 @@
 WARNINGS := -Wall -Wextra -Werror -Wpedantic -Wcast-align -Wwrite-strings \
 	-Wredundant-decls -Wconversion
 
-CFLAGS := -std=c99 -g $(WARNINGS) $(CFLAGS)
+CFLAGS := -std=c99 -g -MMD $(WARNINGS) $(CFLAGS)
 
 TARGET := treef
 PREFIX ?= /usr/local
 BINDIR := $(DESTDIR)$(PREFIX)/bin
 
-OBJ := $(patsubst %.c, %.o, $(wildcard *.c))
+src := $(wildcard *.c)
+obj := $(src:%.c=%.o)
+dep := $(src:%.c=%.d)
 
 all: $(TARGET)
 
-$(TARGET): $(OBJ)
+-include $(dep)
+
+$(TARGET): $(obj)
 	$(CC) $(CFLAGS) -o $@ $^
 
 clean:
 	$(RM) $(TARGET)
-	$(RM) $(OBJ)
 	$(RM) -r $(TARGET).dSYM
+	$(RM) $(obj)
+	$(RM) $(dep)
 
 test: $(TARGET)
 	./test.sh
