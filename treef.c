@@ -3,36 +3,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <ctype.h>
 #include <unistd.h>
 #include <stdbool.h>
-#include <sys/stat.h>
+#include "node.h"
 #include "nstr.h"
+#include "color.h"
 
 #define ARENA_INITIAL_CAPACITY 8
-
-enum type {
-    TYPE_NONE,
-    TYPE_FILE,
-    TYPE_DIR,
-    TYPE_LINK,
-    TYPE_PIPE,
-    TYPE_SOCK,
-    TYPE_BLOCK,
-    TYPE_CHAR,
-    //TYPE_ORPHAN,
-    TYPE_EXEC,
-    TYPE_SUID,
-    TYPE_SGID,
-    //TYPE_STICKY,
-    TYPE_OTHR,
-    TYPE_OTHRS,
-    TYPE_COUNT
-};
-
-static struct nstr *type_sgr[TYPE_COUNT];
-static struct nstr empty_string;
-static struct nstr *sgr0_eol;
 
 static struct nstr_block nstrb;
 
@@ -46,20 +23,6 @@ struct arena {
     size_t used;
     size_t capacity;
     struct node *nodes;
-};
-
-/**
- * A node in the tree.
- *
- * Refers to its first child and next siblings by indices into the containing
- * arena, or -1 if none exists. Nodes form a left-child right-sibling binary
- * tree.
- */
-struct node {
-    struct nstr *name;
-    int sibling_idx;
-    int child_idx;
-    enum type type;
 };
 
 enum { OFF, ON, AUTO } flag_stat = AUTO;
@@ -144,50 +107,6 @@ node_find_or_add(struct arena *arena, int parent_idx, char *name, int len, enum 
         return node_add(arena, parent_idx, found.last_sibling_idx, nstr_dup(&nstrb, len, name), type);
 }
 
-enum type
-get_type(const char *path)
-{
-    if (flag_stat) {
-        struct stat st;
-        if (lstat(path, &st)) {
-            return TYPE_NONE;
-        } else {
-            switch (S_IFMT & st.st_mode) {
-                case S_IFIFO:
-                    return TYPE_PIPE;
-                case S_IFCHR:
-                    return TYPE_CHAR;
-                case S_IFDIR:
-                    // TODO: sticky, ow
-                    return TYPE_DIR;
-                case S_IFBLK:
-                    return TYPE_BLOCK;
-                case S_IFREG:
-                    // GNU checks in this order - seems arbitrary?
-                    if (S_IXUSR & st.st_mode)
-                        if (S_ISUID & st.st_mode)
-                            return TYPE_SUID;
-                        else if (S_ISGID & st.st_mode)
-                            return TYPE_SGID;
-                        else
-                            return TYPE_EXEC;
-                    else
-                        return TYPE_FILE;
-                case S_IFLNK:
-                    // TODO: orphan?
-                    return TYPE_LINK;
-                case S_IFSOCK:
-                    return TYPE_SOCK;
-                //case S_IFWHT: whiteout
-                default:
-                    return TYPE_NONE;
-            }
-        }
-    } else {
-        return TYPE_NONE;
-    }
-}
-
 /**
  * Add a file path to the tree.
  *
@@ -224,189 +143,6 @@ size_t path_add(struct arena *arena, int parent_idx, char *path, int off, enum t
         }
 
         return 1 + path_add(arena, parent_idx, path, off+len+1, type);
-    }
-}
-
-static bool
-parse_gnu_colors(char *colors)
-{
-    puts(colors);
-    return false;
-}
-
-static struct nstr *
-bsd_sgr(char f, char b)
-{
-    if (f == 'x' && b == 'x')
-        return &empty_string;
-    // ESC [ff;bb;am
-    struct nstr *sgr = nstr_alloc(&nstrb, 10);
-
-    sgr->str[sgr->n++] = '\x1b';
-    sgr->str[sgr->n++] = '[';
-
-    if (isupper(f)) {
-        sgr->str[sgr->n++] = '1';
-    }
-
-    if (f != 'x') {
-        char color;
-
-        if (sgr->n != 2)
-            sgr->str[sgr->n++] = ';';
-
-        switch (f) {
-            case 'a': color = '0'; break;
-            case 'b': color = '1'; break;
-            case 'c': color = '2'; break;
-            case 'd': color = '3'; break;
-            case 'e': color = '4'; break;
-            case 'f': color = '5'; break;
-            case 'g': color = '6'; break;
-            case 'h': color = '7'; break;
-        }
-        sgr->str[sgr->n++] = '3';
-        sgr->str[sgr->n++] = color;
-    }
-
-    if (b != 'x') {
-        char color;
-
-        if (sgr->n != 2)
-            sgr->str[sgr->n++] = ';';
-
-        switch (b) {
-            case 'a': color = '0'; break;
-            case 'b': color = '1'; break;
-            case 'c': color = '2'; break;
-            case 'd': color = '3'; break;
-            case 'e': color = '4'; break;
-            case 'f': color = '5'; break;
-            case 'g': color = '6'; break;
-            case 'h': color = '7'; break;
-        }
-        sgr->str[sgr->n++] = '4';
-        sgr->str[sgr->n++] = color;
-    }
-
-    sgr->str[sgr->n++] = 'm';
-    return sgr;
-}
-
-static bool
-parse_bsd_colors(const char *colors)
-{
-    /* From man ls: */
-
-    /*
-    1.	directory
-    2.	symbolic link
-    3.	socket
-    4.	pipe
-    5.	executable
-    6.	block special
-    7.	character special
-    8.	executable with setuid bit set
-    9.	executable with setgid bit set
-    10.	directory writable to others, with sticky bit
-    11.	directory writable to others, without sticky bit
-    */
-
-    /*
-    a	 black
-    b	 red
-    c	 green
-    d	 brown
-    e	 blue
-    f	 magenta
-    g	 cyan
-    h	 light grey
-    A	 bold black, usually shows up as dark grey
-    B	 bold red
-    C	 bold green
-    D	 bold brown, usually shows up as yellow
-    E	 bold blue
-    F	 bold magenta
-    G	 bold cyan
-    H	 bold light grey; looks like bright white
-    x	 default foreground or background
-    */
-
-    int len = 0;
-    while (len < 2*11) {
-        if (!colors[len] || !colors[len+1])
-            break;
-        if (colors[len] != 'x' && (tolower(colors[len]) < 'a' || tolower(colors[len]) > 'h'))
-            break;
-        if (colors[len+1] != 'x' && (colors[len+1] < 'a' || colors[len+1] > 'h'))
-            break;
-        len += 2;
-    }
-
-    if (len == 2*11) {
-        type_sgr[TYPE_DIR]  = bsd_sgr(colors[0],  colors[1]);
-        type_sgr[TYPE_LINK] = bsd_sgr(colors[2],  colors[3]);
-        type_sgr[TYPE_SOCK] = bsd_sgr(colors[4],  colors[5]);
-        type_sgr[TYPE_PIPE] = bsd_sgr(colors[6],  colors[7]);
-        type_sgr[TYPE_EXEC] = bsd_sgr(colors[8],  colors[9]);
-        type_sgr[TYPE_BLOCK]= bsd_sgr(colors[10], colors[11]);
-        type_sgr[TYPE_CHAR] = bsd_sgr(colors[12], colors[13]);
-        type_sgr[TYPE_SUID] = bsd_sgr(colors[14], colors[15]);
-        type_sgr[TYPE_SGID] = bsd_sgr(colors[16], colors[17]);
-        type_sgr[TYPE_OTHRS]= bsd_sgr(colors[18], colors[19]);
-        type_sgr[TYPE_OTHR] = bsd_sgr(colors[20], colors[21]);
-        return true;
-    } else {
-        fprintf(stderr, "warning: invalid LSCOLORS value\n");
-        return false;
-    }
-}
-
-static bool
-set_default_bsd_colors()
-{
-    return parse_bsd_colors("exfxcxdxbxegedabagacad");
-}
-
-static bool
-sgr_init()
-{
-    for (int i = 0; i < TYPE_COUNT; ++i)
-        type_sgr[i] = &empty_string;
-
-    sgr0_eol = nstr_alloc(&nstrb, 4);
-    sgr0_eol->str[0] = '\x1b';
-    sgr0_eol->str[1] = '[';
-    sgr0_eol->str[2] = 'm';
-    sgr0_eol->str[3] = '\n';
-    sgr0_eol->n = 4;
-
-    char *env;
-    if ((env = getenv("LS_COLORS")) && *env && parse_gnu_colors(env))
-        return true;
-    else if ((env = getenv("LSCOLORS")) && *env && parse_bsd_colors(env))
-        return true;
-    else if (getenv("CLICOLOR"))
-        return set_default_bsd_colors();
-#if 0
-    else if (getenv("TERMCOLOR"))
-        return set_default_gnu_colors;
-#endif
-    else
-        return false;
-}
-
-void
-print_node(struct node node)
-{
-    if (flag_stat) {
-        fwrite(type_sgr[node.type]->str, 1, type_sgr[node.type]->n, stdout);
-        fwrite(node.name->str, 1, node.name->n, stdout);
-        fwrite(sgr0_eol->str, 1, sgr0_eol->n, stdout);
-
-    } else {
-        fwrite(node.name->str, 1, node.name->n, stdout);
-        putc('\n', stdout);
     }
 }
 
@@ -522,7 +258,7 @@ main(int argc, char *argv[])
 
     if (flag_stat == AUTO && !isatty(1))
         flag_stat = OFF;
-    else if (flag_stat && !sgr_init())
+    else if (flag_stat && !color_init(&nstrb))
         flag_stat = OFF;
 
     struct arena arena;
