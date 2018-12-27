@@ -21,16 +21,22 @@ enum type {
     TYPE_COUNT
 };
 
-/**
- * A node in the tree.
- *
- * Refers to its first child and next siblings by indices into the containing
- * arena, or -1 if none exists. Nodes form a left-child right-sibling binary
- * tree.
- */
 struct node {
     struct nstr *name;
     int sibling_idx;
     int child_idx;
     enum type type;
 };
+
+struct tree {
+    size_t count;
+    size_t capacity;
+    size_t height;
+    struct node *nodes;
+};
+
+void
+tree_add_path(struct tree *, struct nstr_block *, int, char *, int, enum type);
+
+void
+print_tree(struct tree *);

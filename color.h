@@ -1,7 +1,7 @@
 #pragma once
 
 #include <stdbool.h>
-#include "node.h"
+#include "tree.h"
 #include "nstr.h"
 
 enum type

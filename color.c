@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include "color.h"
-#include "node.h"
+#include "tree.h"
 #include "nstr.h"
 
 extern int flag_stat;
