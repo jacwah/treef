@@ -4,6 +4,7 @@
 # Run as `VALGRIND= ./test.sh` if you don't want to use Valgrind.
 : ${TREEF:=./treef}
 : ${DIFF:=diff}
+: ${TEST:=*}
 
 if [ $(which valgrind) ]
 then
@@ -20,7 +21,7 @@ FAIL="${RED}✗${RESET}"
 successful=0
 failed=0
 
-for infile in tests/*.in
+for infile in tests/${TEST}.in
 do
     path=${infile%.in}
     name=${path##*/}
