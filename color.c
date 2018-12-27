@@ -7,8 +7,6 @@
 #include "tree.h"
 #include "nstr.h"
 
-extern int flag_stat;
-
 static struct nstr_block *g_nstrbp;
 static struct nstr *g_type_sgr[TYPE_COUNT];
 static struct nstr g_empty_string;

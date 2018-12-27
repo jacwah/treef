@@ -9,8 +9,6 @@
 #include "nstr.h"
 #include "color.h"
 
-enum { OFF, ON, AUTO } flag_stat = AUTO;
-
 static struct nstr_block nstrb;
 
 static void
@@ -39,6 +37,8 @@ usage()
 int
 main(int argc, char *argv[])
 {
+    enum { OFF, ON, AUTO } flag_stat = AUTO;
+
     for (int i = 1; i < argc; ++i) {
         char *opt = argv[i];
         if (opt[0] == '-' && opt[1]) {
