@@ -2,16 +2,14 @@
 The tree formatter.
 
 `treef` reads paths from stdin and formats them as a tree, like the `tree`
-utility. Many tools' output can be piped to `treef`, allowing infinite
-compositions.
+utility. Many tools' output can be piped to `treef`.
 
     treef
-    ├── UNIX philosophy
-    │   ├── Simple
-    │   └── Composable
-    ├── MIT license
-    │   └── Contributions welcome!
-    └── Written by Jacob Wahlgren
+    ├── unix style
+    │   ├── simple
+    │   └── composable
+    ├── mit license
+    └── written by jacob wahlgren
 
 ## Getting started
 Use `make` to build and install treef.
@@ -57,5 +55,4 @@ Run automated tests with
 
     make test
 
-The tests will run with Valgrind's memcheck if installed. See TESTING.md for
-help on writing test cases.
+The tests will run with Valgrind's memcheck if installed. See TESTING.md.
