@@ -58,9 +58,10 @@ get_type(const char *path)
 }
 
 static bool
-parse_gnu_colors(char *colors)
+parse_gnu_colors(const char *colors)
 {
-    colors[0] = 0;
+    /* TODO */
+    (void)colors;
     return false;
 }
 
