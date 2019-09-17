@@ -1,8 +1,9 @@
 #pragma once
 
-#include <stdbool.h>
 #include "tree.h"
 #include "nstr.h"
+
+#include <stdbool.h>
 
 enum type
 get_type(const char *);

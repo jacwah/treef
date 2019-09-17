@@ -1,16 +1,17 @@
 #include "nstr.h"
+
 #include <unistd.h>
 #include <string.h>
 #include <sys/mman.h>
 
 #define ALIGNUP(addr, align) (((addr)+((align)-1))&-(align))
 
-static int page_size;
+static size_t page_size;
 
 void
 nstr_init(struct nstr_block *block)
 {
-    page_size = getpagesize();
+    page_size = (size_t)sysconf(_SC_PAGESIZE);
     block->size = page_size;
     block->data = mmap(NULL, (size_t)block->size, PROT_READ|PROT_WRITE, MAP_ANONYMOUS|MAP_PRIVATE, -1, 0);
     block->offset = 0;
@@ -21,17 +22,17 @@ nstr_init(struct nstr_block *block)
 }
 
 struct nstr *
-nstr_alloc(struct nstr_block *block, int n)
+nstr_alloc(struct nstr_block *block, nstrlen n)
 {
     struct nstr *result;
-    int size = (int)sizeof(struct nstr) + ALIGNUP(n, (int)sizeof(struct nstr));
+    size_t size = sizeof(struct nstr) + ALIGNUP(n, sizeof(struct nstr));
 
     if (size > block->size - block->offset) {
 #ifdef NSTR_STATS
         block->waste += block->size - block->offset;
 #endif
         block->size = ALIGNUP(size, page_size);
-        block->data = mmap(NULL, (size_t)block->size, PROT_READ|PROT_WRITE, MAP_ANONYMOUS|MAP_PRIVATE, -1, 0);
+        block->data = mmap(NULL, block->size, PROT_READ|PROT_WRITE, MAP_ANONYMOUS|MAP_PRIVATE, -1, 0);
         block->offset = 0;
     }
 
@@ -39,13 +40,13 @@ nstr_alloc(struct nstr_block *block, int n)
     block->offset += size;
 #ifdef NSTR_STATS
     block->total += size;
-    block->waste += n % (int)sizeof(struct nstr);
+    block->waste += n % sizeof(struct nstr);
 #endif
     return result;
 }
 
 struct nstr *
-nstr_dup(struct nstr_block *block, int n, char *str)
+nstr_dup(struct nstr_block *block, nstrlen n, char *str)
 {
     struct nstr *ns = nstr_alloc(block, n);
     memcpy(&ns->str, str, n);
@@ -58,10 +59,10 @@ nstr_dup(struct nstr_block *block, int n, char *str)
 void
 nstr_print_stats(struct nstr_block *block)
 {
-    int alloced = block->total + block->size - block->offset;
-    int real_waste = block->waste + block->size - block->offset;
+    size_t alloced = block->total + block->size - block->offset;
+    size_t real_waste = block->waste + block->size - block->offset;
     float waste_percent = (100.0f*real_waste)/alloced;
-    fprintf(stderr, "nstr stats: s=%d a=%d t=%d w=%d (%f%%)\n",
+    fprintf(stderr, "nstr stats: s=%lu a=%lu t=%lu w=%lu (%f%%)\n",
             block->size, alloced, block->total,
             real_waste, waste_percent);
 }

@@ -1,9 +1,9 @@
-#!/bin/bash
+#!/bin/sh
 
 # Define environment variables to use alternative tools.
 # Run as `VALGRIND= ./test.sh` if you don't want to use Valgrind.
 : ${TREEF:=./treef}
-: ${DIFF:=diff}
+: ${DIFF:=diff -au}
 : ${TEST:=*}
 
 if [ $(which valgrind) ]
@@ -26,21 +26,20 @@ do
     path=${infile%.in}
     name=${path##*/}
 
-    diff=$($DIFF --text ${path}.out <($VALGRIND $TREEF < "$infile"))
+    $VALGRIND $TREEF <${infile} | $DIFF ${path}.out -
 
-    if [ -z "$diff" ]
+    if [ $? -eq 0 ]
     then
-        let successful+=1
+        successful=`expr $successful + 1`
         echo "$OK $name"
     else
-        let failed+=1
+        failed=`expr $failed + 1`
         echo "$FAIL $name"
-        echo "$diff"
     fi
 done
 
-[[ $successful > 0 ]] && SUCCESS_COLOR="$GREEN" || SUCCESS_COLOR="$RED"
-[[ $failed > 0 ]] && FAIL_COLOR="$RED" || FAIL_COLOR="$GREEN"
+test $successful > 0 && SUCCESS_COLOR="$GREEN" || SUCCESS_COLOR="$RED"
+test $failed > 0 && FAIL_COLOR="$RED" || FAIL_COLOR="$GREEN"
 
 echo
 echo "${SUCCESS_COLOR}${successful}${RESET} successful, ${FAIL_COLOR}${failed}${RESET} failed."

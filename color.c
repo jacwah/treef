@@ -1,11 +1,14 @@
+#include "color.h"
+#include "tree.h"
+#include "nstr.h"
+
+#include <sys/types.h>
 #include <sys/stat.h>
+#include <unistd.h>
 #include <ctype.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdbool.h>
-#include "color.h"
-#include "tree.h"
-#include "nstr.h"
 
 static struct nstr_block *g_nstrbp;
 static struct nstr *g_type_sgr[TYPE_COUNT];

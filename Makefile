@@ -1,7 +1,7 @@
-WARNINGS := -Wall -Wextra -Werror -Wpedantic -Wcast-align -Wwrite-strings \
+WARNINGS := -Wall -Wextra -Werror -pedantic -Wcast-align -Wwrite-strings \
 	-Wredundant-decls -Wconversion
 
-CFLAGS := -std=c99 -g -MMD $(WARNINGS) $(CFLAGS)
+CFLAGS := -MMD $(WARNINGS) $(CFLAGS)
 
 TARGET := treef
 PREFIX ?= /usr/local

@@ -1,13 +1,12 @@
-#define _POSIX_C_SOURCE 200809L
+#include "tree.h"
+#include "nstr.h"
+#include "color.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <stdbool.h>
-#include "tree.h"
-#include "nstr.h"
-#include "color.h"
 
 static struct nstr_block nstrb;
 

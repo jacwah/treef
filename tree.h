@@ -36,7 +36,7 @@ struct tree {
 };
 
 void
-tree_add_path(struct tree *, struct nstr_block *, int, char *, int, enum type);
+tree_add_path(struct tree *, struct nstr_block *, int, char *, size_t, enum type);
 
 void
 print_tree(struct tree *);

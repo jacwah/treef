@@ -1,8 +1,9 @@
+#include "tree.h"
+#include "color.h"
+
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
-#include "tree.h"
-#include "color.h"
 
 static void
 prepare_add(struct tree *tree)
@@ -45,7 +46,7 @@ struct find_result {
 };
 
 static struct find_result
-find(struct tree *tree, int parent_idx, char *name, int len)
+find(struct tree *tree, int parent_idx, char *name, size_t len)
 {
     struct find_result result;
     result.last_sibling_idx = -1;
@@ -76,17 +77,17 @@ find(struct tree *tree, int parent_idx, char *name, int len)
 }
 
 static int
-find_or_add(struct tree *tree, struct nstr_block *nstrbp, int parent_idx, char *name, int len, enum type type)
+find_or_add(struct tree *tree, struct nstr_block *nstrbp, int parent_idx, char *name, size_t len, enum type type)
 {
     struct find_result found = find(tree, parent_idx, name, len);
     if (found.node_idx >= 0)
         return found.node_idx;
     else
-        return add(tree, parent_idx, found.last_sibling_idx, nstr_dup(nstrbp, len, name), type);
+        return add(tree, parent_idx, found.last_sibling_idx, nstr_dup(nstrbp, (nstrlen)len, name), type);
 }
 
 void
-tree_add_path(struct tree *tree, struct nstr_block *nstrbp, int parent_idx, char *path, int off, enum type type)
+tree_add_path(struct tree *tree, struct nstr_block *nstrbp, int parent_idx, char *path, size_t off, enum type type)
 {
     size_t height = 0;
 
@@ -103,11 +104,11 @@ tree_add_path(struct tree *tree, struct nstr_block *nstrbp, int parent_idx, char
         if (!slash) {
             // Leaf node
             // TODO strchr with len
-            find_or_add(tree, nstrbp, parent_idx, path+off, (int)strlen(path+off), type);
+            find_or_add(tree, nstrbp, parent_idx, path+off, strlen(path+off), type);
             break;
         } else {
             int grandparent_idx = parent_idx;
-            int len = (int)(slash-path)-off;
+            size_t len = (size_t)(slash-path)-off;
             struct find_result found_parent = find(tree, grandparent_idx, path+off, len);
 
             if (found_parent.node_idx >= 0) {
@@ -116,7 +117,7 @@ tree_add_path(struct tree *tree, struct nstr_block *nstrbp, int parent_idx, char
                 *slash = '\0';
                 enum type parent_type = get_type(path);
                 *slash = '/';
-                struct nstr *parent_name = nstr_dup(nstrbp, len, path+off);
+                struct nstr *parent_name = nstr_dup(nstrbp, (nstrlen)len, path+off);
                 parent_idx = add(tree, grandparent_idx, found_parent.last_sibling_idx, parent_name, parent_type);
             }
 
