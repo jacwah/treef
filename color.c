@@ -9,21 +9,23 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdbool.h>
+#include <string.h>
 
 static struct nstr_block *g_nstrbp;
 static struct nstr *g_type_sgr[TYPE_COUNT];
 static struct nstr g_empty_string;
 static struct nstr *g_sgr0_eol;
-static bool g_initted;
+static bool g_enabled;
 
 enum type
 get_type(const char *path)
 {
-    if (g_initted) {
+    if (g_enabled) {
         struct stat st;
         if (lstat(path, &st)) {
             return TYPE_NONE;
         } else {
+            // TODO: multihardlink (mh)
             switch (S_IFMT & st.st_mode) {
                 case S_IFIFO:
                     return TYPE_PIPE;
@@ -46,11 +48,10 @@ get_type(const char *path)
                     else
                         return TYPE_FILE;
                 case S_IFLNK:
-                    // TODO: orphan?
+                    // TODO: orphan
                     return TYPE_LINK;
                 case S_IFSOCK:
                     return TYPE_SOCK;
-                //case S_IFWHT: whiteout
                 default:
                     return TYPE_NONE;
             }
@@ -63,8 +64,64 @@ get_type(const char *path)
 static bool
 parse_gnu_colors(const char *colors)
 {
-    /* TODO */
-    (void)colors;
+    // TODO: fallback to superset when sgr not defined (eg suid->exec)
+    while (*colors) {
+        enum type type;
+#define id(a,b) ((a<<8)|b)
+        switch (id(colors[0],colors[1])) {
+            case id('f','i'): type = TYPE_FILE;   break;
+            case id('d','i'): type = TYPE_DIR;    break;
+            case id('l','n'): type = TYPE_LINK;   break;
+            case id('p','i'): type = TYPE_PIPE;   break;
+            case id('s','o'): type = TYPE_SOCK;   break;
+            case id('b','d'): type = TYPE_BLOCK;  break;
+            case id('c','d'): type = TYPE_CHAR;   break;
+            case id('o','r'): type = TYPE_ORPHAN; break;
+            case id('e','x'): type = TYPE_EXEC;   break;
+            case id('s','u'): type = TYPE_SUID;   break;
+            case id('s','g'): type = TYPE_SGID;   break;
+            case id('s','t'): type = TYPE_STICKY; break;
+            case id('t','w'): type = TYPE_OWRITS; break;
+            case id('o','w'): type = TYPE_OWRITE; break;
+            case id('*','.'): // TODO support filename wildcards
+            default:
+                //fprintf(stderr, "unrecognized: %.2s\n", colors);
+                colors += 2;
+                while (*colors && *colors++ != ':');
+                continue;
+        }
+#undef id
+        colors += 2;
+
+        if (*colors++ != '=')
+            goto fail;
+
+        size_t len = 0;
+        while (colors[len] && colors[len] != ':') {
+            if (!isdigit(colors[len]) && colors[len] != ';')
+                goto fail;
+            len++;
+        }
+
+        struct nstr *sgr = nstr_alloc(g_nstrbp, (nstrlen)(2+len+1));
+        sgr->n = (nstrlen)(2+len+1);
+
+        sgr->str[0] = '\x1b';
+        sgr->str[1] = '[';
+
+        memcpy(2+sgr->str, colors, (nstrlen)len);
+        sgr->str[2+len] = 'm';
+
+        g_type_sgr[type] = sgr;
+        colors += len;
+
+        while (*colors == ':') colors++;
+    }
+
+    return true;
+
+fail:
+    fprintf(stderr, "warning: failed to parse LS_COLORS\n");
     return false;
 }
 
@@ -142,17 +199,20 @@ parse_bsd_colors(const char *colors)
     }
 
     if (len == 2*11) {
-        g_type_sgr[TYPE_DIR]  = bsd_sgr(colors[0],  colors[1]);
-        g_type_sgr[TYPE_LINK] = bsd_sgr(colors[2],  colors[3]);
-        g_type_sgr[TYPE_SOCK] = bsd_sgr(colors[4],  colors[5]);
-        g_type_sgr[TYPE_PIPE] = bsd_sgr(colors[6],  colors[7]);
-        g_type_sgr[TYPE_EXEC] = bsd_sgr(colors[8],  colors[9]);
-        g_type_sgr[TYPE_BLOCK]= bsd_sgr(colors[10], colors[11]);
-        g_type_sgr[TYPE_CHAR] = bsd_sgr(colors[12], colors[13]);
-        g_type_sgr[TYPE_SUID] = bsd_sgr(colors[14], colors[15]);
-        g_type_sgr[TYPE_SGID] = bsd_sgr(colors[16], colors[17]);
-        g_type_sgr[TYPE_OTHRS]= bsd_sgr(colors[18], colors[19]);
-        g_type_sgr[TYPE_OTHR] = bsd_sgr(colors[20], colors[21]);
+        g_type_sgr[TYPE_DIR]    = bsd_sgr(colors[0],  colors[1]);
+        g_type_sgr[TYPE_LINK]   = bsd_sgr(colors[2],  colors[3]);
+        g_type_sgr[TYPE_SOCK]   = bsd_sgr(colors[4],  colors[5]);
+        g_type_sgr[TYPE_PIPE]   = bsd_sgr(colors[6],  colors[7]);
+        g_type_sgr[TYPE_EXEC]   = bsd_sgr(colors[8],  colors[9]);
+        g_type_sgr[TYPE_BLOCK]  = bsd_sgr(colors[10], colors[11]);
+        g_type_sgr[TYPE_CHAR]   = bsd_sgr(colors[12], colors[13]);
+        g_type_sgr[TYPE_SUID]   = bsd_sgr(colors[14], colors[15]);
+        g_type_sgr[TYPE_SGID]   = bsd_sgr(colors[16], colors[17]);
+        g_type_sgr[TYPE_OWRITS] = bsd_sgr(colors[18], colors[19]);
+        g_type_sgr[TYPE_OWRITE] = bsd_sgr(colors[20], colors[21]);
+
+        g_type_sgr[TYPE_ORPHAN] = g_type_sgr[TYPE_LINK];
+        g_type_sgr[TYPE_STICKY] = g_type_sgr[TYPE_DIR];
         return true;
     } else {
         return false;
@@ -181,26 +241,28 @@ color_init(struct nstr_block *nstrbp)
 
     char *env;
     if ((env = getenv("LS_COLORS")) && *env && parse_gnu_colors(env))
-        g_initted = true;
+        g_enabled = true;
     else if ((env = getenv("LSCOLORS")) && *env && parse_bsd_colors(env))
-        g_initted = true;
+        g_enabled = true;
     else if (getenv("CLICOLOR"))
-        g_initted = set_default_bsd_colors();
+        g_enabled = set_default_bsd_colors();
 #if 0
     else if (getenv("TERMCOLOR"))
-        g_initted = set_default_gnu_colors;
+        g_enabled = set_default_gnu_colors;
 #endif
 
-    return g_initted;
+    return g_enabled;
 }
 
 void
 print_node(struct node node)
 {
-    if (g_initted) {
-        fwrite(g_type_sgr[node.type]->str, 1, g_type_sgr[node.type]->n, stdout);
+    if (g_enabled) {
+        bool colored = g_type_sgr[node.type]->n;
+        if (colored) fwrite(g_type_sgr[node.type]->str, 1, g_type_sgr[node.type]->n, stdout);
         fwrite(node.name->str, 1, node.name->n, stdout);
-        fwrite(g_sgr0_eol->str, 1, g_sgr0_eol->n, stdout);
+        if (colored) fwrite(g_sgr0_eol->str, 1, g_sgr0_eol->n, stdout);
+        else putc('\n', stdout);
     } else {
         fwrite(node.name->str, 1, node.name->n, stdout);
         putc('\n', stdout);

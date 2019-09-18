@@ -11,13 +11,13 @@ enum type {
     TYPE_SOCK,
     TYPE_BLOCK,
     TYPE_CHAR,
-    //TYPE_ORPHAN,
+    TYPE_ORPHAN,
     TYPE_EXEC,
     TYPE_SUID,
     TYPE_SGID,
-    //TYPE_STICKY,
-    TYPE_OTHR,
-    TYPE_OTHRS,
+    TYPE_STICKY,
+    TYPE_OWRITS,
+    TYPE_OWRITE,
     TYPE_COUNT
 };
 
