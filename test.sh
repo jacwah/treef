@@ -11,9 +11,10 @@ then
     : ${VALGRIND=valgrind --tool=memcheck --leak-check=no --quiet}
 fi
 
-RED=$(tput AF 1 2>/dev/null)
-GREEN=$(tput AF 2 2>/dev/null)
-RESET=$(tput me 2>/dev/null)
+# I try to support FreeBSD here by falling back to termcap names.
+RED=$(tput setaf 1 2>/dev/null || tput AF 1 2>/dev/null)
+GREEN=$(tput setaf 2 2>/dev/null || tput AF 2 2>/dev/null)
+RESET=$(tput sgr0 2>/dev/null || tput me 2>/dev/null)
 
 OK="${GREEN}✓${RESET}"
 FAIL="${RED}✗${RESET}"
